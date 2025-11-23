@@ -5,6 +5,9 @@ export interface UserTheme {
   textColor: string;
   headerColor: string;
   panelColor: string;
+  musicUrl?: string;
+  cursorUrl?: string; // New: Custom cursor
+  borderRadius?: string; // New: '0px' or '10px' etc
 }
 
 export interface User {
@@ -12,6 +15,7 @@ export interface User {
   username: string;
   avatarUrl: string;
   tagline: string;
+  bio?: string;
   mood: string;
   isOnline: boolean;
   topFriends?: string[]; // Array of User IDs
@@ -19,6 +23,7 @@ export interface User {
   isAdmin?: boolean;
   isBanned?: boolean;
   bannedUntil?: number | null; // Timestamp
+  blockedUsers: string[]; // New: Array of blocked User IDs
   followers: string[]; // User IDs
   following: string[]; // User IDs
 }
@@ -56,6 +61,7 @@ export interface Post {
   comments: Comment[];
   likes: string[]; // Array of User IDs who liked
   tags?: string[];
+  isEdited?: boolean; // New: Edited flag
 }
 
 export enum ViewState {

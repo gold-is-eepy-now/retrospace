@@ -8,10 +8,10 @@ import { TopFriends } from './components/TopFriends';
 // --- INITIAL DATA & PRESETS ---
 
 const PRESET_THEMES: UserTheme[] = [
-  { backgroundUrl: '', backgroundColor: '#FFFFFF', fontFamily: 'Arial, sans-serif', textColor: '#333333', headerColor: '#E8FDC1', panelColor: '#FFFFFF' }, 
-  { backgroundUrl: '', backgroundColor: '#000000', fontFamily: 'Courier New, monospace', textColor: '#00FF00', headerColor: '#111111', panelColor: '#1a1a1a' }, 
-  { backgroundUrl: '', backgroundColor: '#ffeaf4', fontFamily: 'Comic Sans MS', textColor: '#d63384', headerColor: '#ffb3d9', panelColor: '#fff0f5' }, 
-  { backgroundUrl: '', backgroundColor: '#f0f0f0', fontFamily: 'Verdana, sans-serif', textColor: '#000066', headerColor: '#ccccff', panelColor: '#ffffff' },
+  { backgroundUrl: '', musicUrl: '', cursorUrl: '', borderRadius: '0px', backgroundColor: '#FFFFFF', fontFamily: 'Arial, sans-serif', textColor: '#333333', headerColor: '#E8FDC1', panelColor: '#FFFFFF' }, 
+  { backgroundUrl: '', musicUrl: '', cursorUrl: '', borderRadius: '0px', backgroundColor: '#000000', fontFamily: 'Courier New, monospace', textColor: '#00FF00', headerColor: '#111111', panelColor: '#1a1a1a' }, 
+  { backgroundUrl: '', musicUrl: '', cursorUrl: '', borderRadius: '15px', backgroundColor: '#ffeaf4', fontFamily: 'Comic Sans MS', textColor: '#d63384', headerColor: '#ffb3d9', panelColor: '#fff0f5' }, 
+  { backgroundUrl: '', musicUrl: '', cursorUrl: '', borderRadius: '4px', backgroundColor: '#f0f0f0', fontFamily: 'Verdana, sans-serif', textColor: '#000066', headerColor: '#ccccff', panelColor: '#ffffff' },
 ];
 
 // --- COMMON COMPONENTS ---
@@ -72,7 +72,7 @@ export default function App() {
   const [blogTitle, setBlogTitle] = useState('');
   const [blogCategory, setBlogCategory] = useState('Life');
   const [aiGenerating, setAiGenerating] = useState(false);
-  const [bio, setBio] = useState('Loading weird bio...');
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
   
   // Interaction State
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
@@ -80,10 +80,16 @@ export default function App() {
   const [replyContent, setReplyContent] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Editing State
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState('');
+
   // Computed
   const currentUser = users.find(u => u.id === currentUserId) || null;
   const activeProfile = users.find(u => u.id === activeProfileId) || currentUser;
-  const unreadCount = currentUser ? messages.filter(m => m.receiverId === currentUser.id && !m.read).length : 0;
+  const unreadCount = currentUser 
+    ? messages.filter(m => m.receiverId === currentUser.id && !m.read && !currentUser.blockedUsers?.includes(m.senderId)).length 
+    : 0;
 
   // --- INITIALIZATION ---
   useEffect(() => {
@@ -113,35 +119,49 @@ export default function App() {
             setView(ViewState.LOGIN);
         }
 
-        const bioText = await generateProfileBio();
-        setBio(bioText);
         setLoading(false);
     };
     init();
   }, []);
 
-  // --- EFFECT: BACKGROUND IMAGE HANDLING ---
+  // --- EFFECT: BACKGROUND & CURSOR HANDLING ---
   useEffect(() => {
-    if (view === ViewState.PROFILE && activeProfile?.theme?.backgroundUrl) {
-       document.body.style.backgroundImage = `url('${activeProfile.theme.backgroundUrl}')`;
-       document.body.style.backgroundSize = 'cover';
-       document.body.style.backgroundRepeat = 'no-repeat';
-       document.body.style.backgroundPosition = 'center top';
-       document.body.style.backgroundAttachment = 'fixed';
+    if (view === ViewState.PROFILE && activeProfile?.theme) {
+       // Background
+       if (activeProfile.theme.backgroundUrl) {
+           document.body.style.backgroundImage = `url('${activeProfile.theme.backgroundUrl}')`;
+           document.body.style.backgroundSize = 'cover';
+           document.body.style.backgroundRepeat = 'no-repeat';
+           document.body.style.backgroundPosition = 'center top';
+           document.body.style.backgroundAttachment = 'fixed';
+       } else if (activeProfile.theme.backgroundColor) {
+           document.body.style.backgroundImage = 'none';
+           document.body.style.backgroundColor = activeProfile.theme.backgroundColor;
+       } else {
+           document.body.style.backgroundImage = '';
+       }
+
+       // Cursor
+       if (activeProfile.theme.cursorUrl) {
+           document.body.style.cursor = `url('${activeProfile.theme.cursorUrl}'), auto`;
+       } else {
+           document.body.style.cursor = 'auto';
+       }
     } else {
-       // Reset to default CSS rules (managed by index.html classes)
+       // Reset to default CSS rules
        document.body.style.backgroundImage = '';
+       document.body.style.backgroundColor = '';
        document.body.style.backgroundSize = '';
        document.body.style.backgroundRepeat = '';
        document.body.style.backgroundPosition = '';
        document.body.style.backgroundAttachment = '';
+       document.body.style.cursor = 'auto';
     }
   }, [view, activeProfile]);
 
   // --- HELPERS ---
 
   const renderContentWithTags = (content: string) => {
-    // Regex to find words starting with #
     const parts = content.split(/((?:^|\s)#[a-zA-Z0-9_]+)/g);
     return (
       <span>
@@ -168,15 +188,24 @@ export default function App() {
   };
 
   const getFilteredPosts = () => {
-    let filtered = posts;
+    // 1. Filter out blocked users
+    let filtered = posts.filter(p => {
+        if (!currentUser) return true;
+        // Hide posts from people I blocked
+        if (currentUser.blockedUsers?.includes(p.authorId)) return false;
+        // Hide posts from people who blocked me (simulated by checking local user list)
+        const author = users.find(u => u.id === p.authorId);
+        if (author?.blockedUsers?.includes(currentUser.id)) return false;
+        return true;
+    });
+
+    // 2. Filter by search query
     if (searchQuery) {
        const lowerQ = searchQuery.toLowerCase();
        filtered = filtered.filter(p => {
-          // Match hashtag exactly if query starts with #
           if (lowerQ.startsWith('#')) {
              return p.tags?.some(t => t.toLowerCase() === lowerQ) || p.content.toLowerCase().includes(lowerQ);
           }
-          // Otherwise generic search
           return p.content.toLowerCase().includes(lowerQ) || 
                  p.authorName.toLowerCase().includes(lowerQ) ||
                  p.title?.toLowerCase().includes(lowerQ);
@@ -218,7 +247,6 @@ export default function App() {
     e.preventDefault();
     if (!signupUsername.trim()) return;
     
-    // Refresh users to be safe
     const latestUsers = await api.getUsers(useServer);
     if (latestUsers.find(u => u.username.toLowerCase() === signupUsername.toLowerCase())) {
         alert("Username taken!");
@@ -236,7 +264,8 @@ export default function App() {
         theme: PRESET_THEMES[0],
         isAdmin: false, 
         followers: [],
-        following: []
+        following: [],
+        blockedUsers: []
     };
 
     if (latestUsers.length === 0 || signupUsername.toLowerCase() === 'admin') {
@@ -244,23 +273,6 @@ export default function App() {
     }
 
     await api.createUser(newUser, useServer);
-    
-    const welcomeBlog: Post = {
-        id: `p-${Date.now()}`,
-        type: 'blog',
-        authorId: newUser.id,
-        authorName: newUser.username,
-        authorAvatar: newUser.avatarUrl,
-        title: 'My First Post',
-        category: 'General',
-        content: 'I just joined Retrospace! This place is cool.',
-        timestamp: 'Just now',
-        likes: [],
-        comments: [],
-        tags: []
-    };
-    await api.createPost(welcomeBlog, useServer);
-
     await reloadData();
     setCurrentUserId(newUser.id);
     api.setSession(newUser.id);
@@ -278,7 +290,6 @@ export default function App() {
   const handlePostSubmit = async () => {
     if (!newPostContent.trim() || !currentUser) return;
 
-    // Extract tags
     const tags = newPostContent.match(/#[a-zA-Z0-9_]+/g) || [];
 
     const newPost: Post = {
@@ -302,7 +313,7 @@ export default function App() {
     setNewPostContent('');
     setBlogTitle('');
     
-    // AI Reply Simulation (Simplified for async)
+    // Simulated AI Reply logic...
     if (Math.random() > 0.3 && users.length > 1) {
       setTimeout(async () => {
          const latestPosts = await api.getPosts(useServer);
@@ -313,7 +324,7 @@ export default function App() {
          const otherUsers = users.filter(u => u.id !== currentUser.id);
          const randomFriend = otherUsers.length > 0 ? otherUsers[Math.floor(Math.random() * otherUsers.length)] : null;
          
-         if (randomFriend) {
+         if (randomFriend && !currentUser.blockedUsers?.includes(randomFriend.id)) {
              const updatedPost = {
                  ...targetPost,
                  comments: [...targetPost.comments, {
@@ -329,6 +340,36 @@ export default function App() {
          }
       }, 5000);
     }
+  };
+
+  const handleStartEdit = (post: Post) => {
+    setEditingPostId(post.id);
+    setEditingContent(post.content);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingPostId(null);
+    setEditingContent('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingPostId) return;
+    const post = posts.find(p => p.id === editingPostId);
+    if (!post) return;
+
+    const tags = editingContent.match(/#[a-zA-Z0-9_]+/g) || [];
+
+    const updatedPost = {
+      ...post,
+      content: editingContent,
+      isEdited: true,
+      tags: tags as string[]
+    };
+
+    await api.updatePost(updatedPost, useServer);
+    await reloadData();
+    setEditingPostId(null);
+    setEditingContent('');
   };
 
   const handleAddComment = async (postId: string, text: string) => {
@@ -366,18 +407,14 @@ export default function App() {
 
   const handleFollow = async (targetId: string) => {
     if (!currentUser) return;
-    
     const targetUser = users.find(u => u.id === targetId);
     if (!targetUser) return;
 
-    // Update Current User (Following)
     const isFollowing = currentUser.following.includes(targetId);
     const updatedCurrentUser = {
         ...currentUser,
         following: isFollowing ? currentUser.following.filter(id => id !== targetId) : [...currentUser.following, targetId]
     };
-    
-    // Update Target User (Followers)
     const updatedTargetUser = {
         ...targetUser,
         followers: isFollowing ? targetUser.followers.filter(id => id !== currentUser.id) : [...targetUser.followers, currentUser.id]
@@ -388,13 +425,34 @@ export default function App() {
     await reloadData();
   };
 
+  const handleBlockUser = async (targetId: string) => {
+    if (!currentUser) return;
+    
+    // Toggle Block
+    const isBlocked = currentUser.blockedUsers?.includes(targetId);
+    let newBlockedList = currentUser.blockedUsers || [];
+    
+    if (isBlocked) {
+        newBlockedList = newBlockedList.filter(id => id !== targetId);
+    } else {
+        newBlockedList = [...newBlockedList, targetId];
+        // Also unfollow if blocking
+        if (currentUser.following.includes(targetId)) {
+            handleFollow(targetId); 
+        }
+    }
+
+    const updatedUser = { ...currentUser, blockedUsers: newBlockedList };
+    await api.updateUser(updatedUser, useServer);
+    await reloadData();
+    alert(isBlocked ? "User Unblocked" : "User Blocked");
+  };
+
   const handleBanUser = async (userId: string, durationMinutes: number) => {
     const userToBan = users.find(u => u.id === userId);
     if (!userToBan) return;
-
     const until = durationMinutes === -1 ? null : Date.now() + (durationMinutes * 60000); 
     const updatedUser = { ...userToBan, isBanned: true, bannedUntil: until };
-    
     await api.updateUser(updatedUser, useServer);
     await reloadData();
   };
@@ -449,6 +507,29 @@ export default function App() {
   const navigateToProfile = (userId: string) => {
     setActiveProfileId(userId);
     setView(ViewState.PROFILE);
+    setSearchQuery('');
+  };
+
+  const updateProfileThemeField = (field: keyof UserTheme, value: string) => {
+      if (!currentUser) return;
+      const updatedUser = {
+          ...currentUser,
+          theme: { ...currentUser.theme, [field]: value }
+      };
+      // Optimistic
+      setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
+      api.updateUser(updatedUser, useServer);
+  };
+  
+  const updateUserProfile = (field: keyof User, value: string) => {
+    if (!currentUser) return;
+    const updatedUser = {
+        ...currentUser,
+        [field]: value
+    };
+    // Optimistic
+    setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
+    api.updateUser(updatedUser, useServer);
   };
 
   // --- RENDERING ---
@@ -473,7 +554,6 @@ export default function App() {
        <Header user={null} onlineCount={4582} setView={setView} unreadCount={0} handleLogout={handleLogout} serverStatus={useServer} />
        
        <div className="flex gap-4">
-         {/* LEFT: Intro */}
          <div className="w-[520px]">
             <h2 className="text-xl mb-1 leading-tight text-[#333] font-bold">
                A global community of friends and strangers answering one simple question: <span className="highlight-yellow">What are you doing?</span> Answer on your phone, IM, or right here on the web!
@@ -481,7 +561,6 @@ export default function App() {
             <p className="text-sm mb-4 text-[#666]">Look at what <a href="#">these people</a> are doing right now...</p>
          </div>
 
-         {/* RIGHT: Login Box */}
          <div className="w-[200px] flex-shrink-0">
             <div className="sidebar-box">
                <div className="sidebar-header">
@@ -537,23 +616,11 @@ export default function App() {
                  />
                  <div className="text-xs text-gray-500 mt-1">Check availability</div>
               </div>
-              
               <div>
                  <label className="block font-bold mb-1">Password:</label>
                  <input type="password" className="w-full text-lg p-1" required />
                  <div className="text-xs text-gray-500 mt-1">6 characters or more!</div>
               </div>
-
-              <div>
-                 <label className="block font-bold mb-1">Email Address:</label>
-                 <input type="email" className="w-full text-lg p-1" required />
-                 <div className="text-xs text-gray-500 mt-1">We won't spam you. Much.</div>
-              </div>
-              
-              <div className="text-xs">
-                 <input type="checkbox" required /> I agree to the <a href="#" className="underline">Terms of Service</a>.
-              </div>
-
               <div className="flex justify-between items-center mt-4">
                  <a onClick={() => setView(ViewState.LOGIN)} className="underline cursor-pointer text-blue-600">Back to Login</a>
                  <button type="submit" className="btn-retro text-lg px-6 py-2">Create my Account</button>
@@ -601,21 +668,9 @@ export default function App() {
 
                 {postMode === 'blog' && (
                   <div className="mb-1">
-                     <input 
-                       className="w-full mb-1" 
-                       placeholder="Title..." 
-                       value={blogTitle} 
-                       onChange={e => setBlogTitle(e.target.value)} 
-                     />
-                     <select 
-                       className="w-full mb-1 text-xs"
-                       value={blogCategory}
-                       onChange={e => setBlogCategory(e.target.value)}
-                     >
-                        <option>General</option>
-                        <option>Music</option>
-                        <option>Rant</option>
-                        <option>School</option>
+                     <input className="w-full mb-1" placeholder="Title..." value={blogTitle} onChange={e => setBlogTitle(e.target.value)} />
+                     <select className="w-full mb-1 text-xs" value={blogCategory} onChange={e => setBlogCategory(e.target.value)}>
+                        <option>General</option><option>Music</option><option>Rant</option><option>School</option>
                      </select>
                   </div>
                 )}
@@ -633,9 +688,7 @@ export default function App() {
                    <span className="text-[10px] text-gray-500">{140 - newPostContent.length} chars</span>
                 </div>
              </div>
-             <button onClick={handlePostSubmit} className="mt-6 font-bold text-lg cursor-pointer hover:text-gray-600">
-               update
-             </button>
+             <button onClick={handlePostSubmit} className="mt-6 font-bold text-lg cursor-pointer hover:text-gray-600">update</button>
           </div>
 
           {/* FEED LIST */}
@@ -656,18 +709,36 @@ export default function App() {
                             {post.authorName}
                           </a>
                           {' '}
-                          {post.type === 'blog' ? (
-                            <span className="italic">
-                              blogged: <a className="font-bold">"{post.title}"</a>
-                              <br/>
-                              <span className="text-[#666]" dangerouslySetInnerHTML={{ __html: post.content.substring(0, 150) + '...' }} />
-                            </span>
+                          {/* EDIT MODE CHECK */}
+                          {editingPostId === post.id ? (
+                            <div className="mt-1">
+                              <textarea 
+                                className="w-full h-16 border border-blue-400 p-1 mb-1"
+                                value={editingContent}
+                                onChange={(e) => setEditingContent(e.target.value)}
+                              />
+                              <div className="flex gap-2">
+                                <button onClick={handleSaveEdit} className="btn-retro font-bold text-green-700">Save</button>
+                                <button onClick={handleCancelEdit} className="btn-retro">Cancel</button>
+                              </div>
+                            </div>
                           ) : (
-                            <span>{renderContentWithTags(post.content)}</span>
+                             <>
+                               {post.type === 'blog' ? (
+                                 <span className="italic">
+                                   blogged: <a className="font-bold">"{post.title}"</a>
+                                   <br/>
+                                   <span className="text-[#666]" dangerouslySetInnerHTML={{ __html: post.content.substring(0, 150) + '...' }} />
+                                 </span>
+                               ) : (
+                                 <span>{renderContentWithTags(post.content)}</span>
+                               )}
+                             </>
                           )}
                           
                           <div className="mt-1 flex items-center gap-2 text-[11px] text-[#999]">
                              <span className="hover:underline cursor-pointer">{post.timestamp}</span>
+                             {post.isEdited && <span className="italic text-gray-400">(edited)</span>}
                              <span>from web</span>
                              {post.likes.length > 0 && <span className="text-red-500">&hearts; {post.likes.length}</span>}
                           </div>
@@ -677,6 +748,10 @@ export default function App() {
                              <a className="action-link cursor-pointer" onClick={() => handleLikePost(post.id)}>
                                {post.likes.includes(currentUser.id) ? 'Unlike' : 'Like'}
                              </a>
+                             {/* EDIT LINK */}
+                             {post.authorId === currentUser.id && (
+                                <a className="action-link cursor-pointer text-blue-500" onClick={() => handleStartEdit(post)}>Edit</a>
+                             )}
                           </div>
 
                           {/* COMMENTS / REPLY AREA */}
@@ -698,16 +773,7 @@ export default function App() {
                                   onChange={e => setReplyContent(e.target.value)} 
                                   placeholder="Write a reply..."
                                 />
-                                <button 
-                                  className="btn-retro"
-                                  onClick={() => {
-                                     if(replyContent.trim()) {
-                                       handleAddComment(post.id, replyContent);
-                                       setReplyContent('');
-                                       setReplyingTo(null);
-                                     }
-                                  }}
-                                >Post</button>
+                                <button className="btn-retro" onClick={() => { if(replyContent.trim()) { handleAddComment(post.id, replyContent); setReplyContent(''); setReplyingTo(null); } }}>Post</button>
                              </div>
                           )}
                       </div>
@@ -751,7 +817,9 @@ export default function App() {
              </div>
              <h3 className="font-bold text-[#333] mb-2 border-b border-[#eee] pb-1">Who to follow</h3>
              <div className="grid grid-cols-2 gap-2">
-                {users.filter(u => u.id !== currentUser.id).slice(0, 6).map(u => (
+                {users
+                   .filter(u => u.id !== currentUser.id && !currentUser.blockedUsers?.includes(u.id))
+                   .slice(0, 6).map(u => (
                    <div key={u.id} className="text-center overflow-hidden">
                       <img src={u.avatarUrl} className="w-[36px] h-[36px] border border-[#ccc] mx-auto cursor-pointer" onClick={() => navigateToProfile(u.id)} />
                       <a onClick={() => navigateToProfile(u.id)} className="text-[10px] block truncate mt-1 cursor-pointer hover:underline">{u.username}</a>
@@ -777,6 +845,7 @@ export default function App() {
       backgroundColor: activeProfile.theme.backgroundColor,
       color: activeProfile.theme.textColor,
       fontFamily: activeProfile.theme.fontFamily,
+      borderRadius: activeProfile.theme.borderRadius || '0px',
     };
 
     return (
@@ -786,30 +855,33 @@ export default function App() {
         <div className="flex gap-4">
           {/* LEFT COL: Profile Info */}
           <div className="w-[200px] flex-shrink-0">
-             <div className="bg-white border border-[#ccc] p-3 mb-3 text-center">
+             <div className="bg-white border border-[#ccc] p-3 mb-3 text-center" style={{ borderRadius: activeProfile.theme.borderRadius || '0px' }}>
                  <img src={activeProfile.avatarUrl} className="w-[150px] h-[150px] mx-auto border border-gray-300 p-1 mb-2" />
                  <h2 className="font-bold text-lg leading-tight break-words">{activeProfile.username}</h2>
                  <div className="text-xs text-gray-500 mb-2">{activeProfile.tagline}</div>
                  
                  {activeProfile.isBanned && <div className="text-red-600 font-bold mb-2 border border-red-500 bg-red-100">BANNED</div>}
                  
-                 <div className="flex justify-center gap-1 mb-3">
+                 <div className="flex flex-col gap-1 mb-3">
                    {isOwnProfile ? (
                      <button onClick={() => {
                         const nextIndex = (PRESET_THEMES.findIndex(t => t.backgroundColor === activeProfile.theme.backgroundColor) + 1) % PRESET_THEMES.length;
                         handleThemeChange(nextIndex);
-                     }} className="btn-retro w-full">Change Theme</button>
+                     }} className="btn-retro w-full">Change Theme Preset</button>
                    ) : (
                      <>
-                      <button onClick={() => handleFollow(activeProfile.id)} className="btn-retro">
-                        {currentUser.following.includes(activeProfile.id) ? 'Unfollow' : 'Follow'}
+                      <div className="flex gap-1">
+                        <button onClick={() => handleFollow(activeProfile.id)} className="btn-retro flex-1">
+                            {currentUser.following.includes(activeProfile.id) ? 'Unfollow' : 'Follow'}
+                        </button>
+                        <button onClick={() => {
+                            const msg = prompt("Quick Message:");
+                            if (msg && msg.trim()) handleSendMessage(activeProfile.id, msg);
+                        }} className="btn-retro flex-1">Msg</button>
+                      </div>
+                      <button onClick={() => handleBlockUser(activeProfile.id)} className="btn-retro w-full text-red-700">
+                         {currentUser.blockedUsers?.includes(activeProfile.id) ? 'Unblock User' : 'Block User'}
                       </button>
-                      <button onClick={() => {
-                           const msg = prompt("Quick Message:");
-                           if (msg && msg.trim()) {
-                             handleSendMessage(activeProfile.id, msg);
-                           }
-                      }} className="btn-retro">Msg</button>
                      </>
                    )}
                  </div>
@@ -829,53 +901,9 @@ export default function App() {
              
              {isOwnProfile && (
                <div className="bg-[#E8FDC1] border border-[#a3dba8] p-2 text-xs text-center font-bold">
-                 <div className="mb-2">This is your profile.</div>
-                 
-                 {/* Background URL Input */}
-                 <div className="mb-2">
-                    <label className="block text-[10px] text-gray-500 mb-1">Custom Background URL</label>
-                    <input 
-                      type="text" 
-                      placeholder="http://..." 
-                      className="w-full text-[10px] mb-1 px-1"
-                      defaultValue={currentUser.theme.backgroundUrl || ''}
-                      onBlur={(e) => {
-                          if (e.target.value !== currentUser.theme.backgroundUrl) {
-                              const updatedUser = { 
-                                  ...currentUser, 
-                                  theme: { ...currentUser.theme, backgroundUrl: e.target.value } 
-                              };
-                              // Optimistic update
-                              setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
-                              api.updateUser(updatedUser, useServer);
-                          }
-                      }}
-                    />
-                 </div>
-                 
-                 {/* Music URL Input */}
-                 <div className="mb-2">
-                    <label className="block text-[10px] text-gray-500 mb-1">Profile Song (YouTube URL)</label>
-                    <input 
-                      type="text" 
-                      placeholder="youtube.com/watch?v=..." 
-                      className="w-full text-[10px] mb-1 px-1"
-                      defaultValue={currentUser.theme.musicUrl || ''}
-                      onBlur={(e) => {
-                          if (e.target.value !== currentUser.theme.musicUrl) {
-                              const updatedUser = { 
-                                  ...currentUser, 
-                                  theme: { ...currentUser.theme, musicUrl: e.target.value } 
-                              };
-                              // Optimistic update
-                              setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
-                              api.updateUser(updatedUser, useServer);
-                          }
-                      }}
-                    />
-                 </div>
-
-                 <a href="#" className="underline">Edit Profile Info</a>
+                 <button className="btn-retro w-full py-1 text-blue-700" onClick={() => setIsEditingProfile(true)}>
+                    Edit Profile
+                 </button>
                </div>
              )}
           </div>
@@ -888,7 +916,7 @@ export default function App() {
                   About {activeProfile.username}
                 </h3>
                 <p className="text-sm mb-4 leading-relaxed whitespace-pre-line">
-                   {bio}
+                   {activeProfile.bio || "No bio information."}
                 </p>
 
                 <h3 className="font-bold text-sm uppercase border-b border-gray-300 pb-1 mb-2" style={{ borderColor: activeProfile.theme.textColor }}>
@@ -922,10 +950,24 @@ export default function App() {
                                </div>
                                
                                <div className="mt-1 mb-2">
-                                 {post.type === 'blog' ? (
-                                    <span dangerouslySetInnerHTML={{ __html: post.content }} />
+                                 {editingPostId === post.id ? (
+                                    <div className="mt-1">
+                                      <textarea 
+                                        className="w-full h-16 border border-blue-400 p-1 mb-1"
+                                        value={editingContent}
+                                        onChange={(e) => setEditingContent(e.target.value)}
+                                      />
+                                      <div className="flex gap-2">
+                                        <button onClick={handleSaveEdit} className="btn-retro font-bold text-green-700">Save</button>
+                                        <button onClick={handleCancelEdit} className="btn-retro">Cancel</button>
+                                      </div>
+                                    </div>
                                  ) : (
-                                    renderContentWithTags(post.content)
+                                    post.type === 'blog' ? (
+                                        <span dangerouslySetInnerHTML={{ __html: post.content }} />
+                                    ) : (
+                                        renderContentWithTags(post.content)
+                                    )
                                  )}
                                </div>
                                
@@ -935,6 +977,10 @@ export default function App() {
                                   <a className="action-link cursor-pointer" onClick={() => handleLikePost(post.id)}>
                                     {post.likes.includes(currentUser.id) ? 'Unlike' : 'Like'}
                                   </a>
+                                  {/* EDIT LINK */}
+                                  {post.authorId === currentUser.id && (
+                                      <a className="action-link cursor-pointer text-blue-500" onClick={() => handleStartEdit(post)}>Edit</a>
+                                  )}
                                </div>
                            </div>
                         </div>
@@ -944,6 +990,99 @@ export default function App() {
              </div>
           </div>
         </div>
+
+        {/* EDIT PROFILE MODAL */}
+        {isEditingProfile && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white border-2 border-[#2276BB] shadow-lg w-[500px] max-h-[80vh] overflow-y-auto">
+                    <div className="bg-[#2276BB] text-white font-bold p-2 flex justify-between">
+                        <span>Edit Profile</span>
+                        <button onClick={() => setIsEditingProfile(false)}>X</button>
+                    </div>
+                    <div className="p-4 space-y-4">
+                        {/* BASIC INFO */}
+                        <div className="border border-gray-300 p-3 bg-gray-50">
+                             <h4 className="font-bold text-xs text-gray-700 border-b border-gray-300 mb-2">Basic Info</h4>
+                             <div className="mb-2">
+                                <label className="block text-[10px] text-gray-500 mb-1">Tagline</label>
+                                <input type="text" className="w-full text-xs" defaultValue={currentUser.tagline} onBlur={e => updateUserProfile('tagline', e.target.value)} />
+                             </div>
+                             <div className="mb-2">
+                                <label className="block text-[10px] text-gray-500 mb-1">Avatar URL</label>
+                                <input type="text" className="w-full text-xs" defaultValue={currentUser.avatarUrl} onBlur={e => updateUserProfile('avatarUrl', e.target.value)} />
+                             </div>
+                             <div className="mb-2">
+                                <label className="block text-[10px] text-gray-500 mb-1">Bio</label>
+                                <textarea className="w-full text-xs h-20" defaultValue={currentUser.bio || ''} onBlur={e => updateUserProfile('bio', e.target.value)} />
+                             </div>
+                        </div>
+
+                        {/* THEME SETTINGS */}
+                        <div className="border border-gray-300 p-3 bg-gray-50">
+                             <h4 className="font-bold text-xs text-gray-700 border-b border-gray-300 mb-2">Theme Customization</h4>
+                             
+                             <div className="mb-2">
+                                <label className="block text-[10px] text-gray-500 mb-1">Background Image URL</label>
+                                <input type="text" className="w-full text-xs" defaultValue={currentUser.theme.backgroundUrl || ''} onBlur={(e) => updateProfileThemeField('backgroundUrl', e.target.value)} />
+                             </div>
+                             <div className="mb-2">
+                                <label className="block text-[10px] text-gray-500 mb-1">Profile Song (YouTube)</label>
+                                <input type="text" className="w-full text-xs" defaultValue={currentUser.theme.musicUrl || ''} onBlur={(e) => updateProfileThemeField('musicUrl', e.target.value)} />
+                             </div>
+                             
+                             <div className="grid grid-cols-2 gap-2 mb-2">
+                                 <div>
+                                     <label className="block text-[10px] text-gray-500">Bg Color</label>
+                                     <input type="color" className="w-full h-6" defaultValue={currentUser.theme.backgroundColor} onBlur={(e) => updateProfileThemeField('backgroundColor', e.target.value)} />
+                                 </div>
+                                 <div>
+                                     <label className="block text-[10px] text-gray-500">Text Color</label>
+                                     <input type="color" className="w-full h-6" defaultValue={currentUser.theme.textColor} onBlur={(e) => updateProfileThemeField('textColor', e.target.value)} />
+                                 </div>
+                                 <div>
+                                     <label className="block text-[10px] text-gray-500">Header Color</label>
+                                     <input type="color" className="w-full h-6" defaultValue={currentUser.theme.headerColor} onBlur={(e) => updateProfileThemeField('headerColor', e.target.value)} />
+                                 </div>
+                                 <div>
+                                     <label className="block text-[10px] text-gray-500">Panel Color</label>
+                                     <input type="color" className="w-full h-6" defaultValue={currentUser.theme.panelColor} onBlur={(e) => updateProfileThemeField('panelColor', e.target.value)} />
+                                 </div>
+                             </div>
+
+                             <div className="mb-2">
+                                 <label className="block text-[10px] text-gray-500 mb-1">Font Family</label>
+                                 <select 
+                                    className="w-full text-xs"
+                                    defaultValue={currentUser.theme.fontFamily}
+                                    onChange={(e) => updateProfileThemeField('fontFamily', e.target.value)}
+                                 >
+                                     <option value="Arial, sans-serif">Arial</option>
+                                     <option value="'Courier New', monospace">Courier New</option>
+                                     <option value="'Times New Roman', serif">Times New Roman</option>
+                                     <option value="'Comic Sans MS', cursive">Comic Sans</option>
+                                     <option value="Verdana, sans-serif">Verdana</option>
+                                 </select>
+                             </div>
+
+                             <div className="grid grid-cols-2 gap-2">
+                                 <div>
+                                    <label className="block text-[10px] text-gray-500 mb-1">Cursor URL</label>
+                                    <input type="text" className="w-full text-xs" defaultValue={currentUser.theme.cursorUrl || ''} onBlur={(e) => updateProfileThemeField('cursorUrl', e.target.value)} />
+                                 </div>
+                                 <div>
+                                    <label className="block text-[10px] text-gray-500 mb-1">Roundness</label>
+                                    <input type="text" className="w-full text-xs" defaultValue={currentUser.theme.borderRadius || '0px'} onBlur={(e) => updateProfileThemeField('borderRadius', e.target.value)} />
+                                 </div>
+                             </div>
+                        </div>
+
+                        <div className="flex justify-end">
+                             <button className="btn-retro px-4 py-1" onClick={() => setIsEditingProfile(false)}>Close & Save</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
       </div>
     );
   };
@@ -951,7 +1090,11 @@ export default function App() {
   // 5. MESSAGES VIEW
   const renderMessages = () => {
     if (!currentUser) return null;
-    const inbox = messages.filter(m => m.receiverId === currentUser.id);
+    // Filter blocked messages
+    const inbox = messages.filter(m => 
+        m.receiverId === currentUser.id && 
+        !currentUser.blockedUsers?.includes(m.senderId)
+    );
     return (
       <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
          <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} handleLogout={handleLogout} serverStatus={useServer} />
