@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Post, ViewState, Comment, PostType, UserTheme, Message } from './types';
 import { generateRetroStatus, generateAIComment, generateProfileBio, generateBlogPost } from './services/geminiService';
+import { api } from './services/api';
 import { MusicPlayer } from './components/MusicPlayer';
 import { TopFriends } from './components/TopFriends';
 
@@ -13,23 +14,25 @@ const PRESET_THEMES: UserTheme[] = [
   { backgroundUrl: '', backgroundColor: '#f0f0f0', fontFamily: 'Verdana, sans-serif', textColor: '#000066', headerColor: '#ccccff', panelColor: '#ffffff' },
 ];
 
-// Empty start state
-const INITIAL_USERS: User[] = [];
-const INITIAL_POSTS: Post[] = [];
-const INITIAL_MESSAGES: Message[] = [];
-
 // --- COMMON COMPONENTS ---
 
 const Header: React.FC<{ 
   user: User | null, 
   onlineCount: number, 
   setView: (v: ViewState) => void,
-  unreadCount: number 
-}> = ({ user, onlineCount, setView, unreadCount }) => (
+  unreadCount: number,
+  handleLogout: () => void,
+  serverStatus: boolean
+}> = ({ user, onlineCount, setView, unreadCount, handleLogout, serverStatus }) => (
   <div className="flex justify-between items-end mb-6 mt-4 px-2 select-none">
-    <h1 className="retro-logo text-[50px] leading-none cursor-pointer" onClick={() => user ? setView(ViewState.HOME) : setView(ViewState.LOGIN)}>
-      retrospace
-    </h1>
+    <div className="flex flex-col">
+        <h1 className="retro-logo text-[50px] leading-none cursor-pointer" onClick={() => user ? setView(ViewState.HOME) : setView(ViewState.LOGIN)}>
+        retrospace
+        </h1>
+        <span className={`text-[9px] font-bold ${serverStatus ? 'text-green-600' : 'text-red-500'}`}>
+            {serverStatus ? '● SERVER ONLINE' : '○ SERVER OFFLINE (LOCAL MODE)'}
+        </span>
+    </div>
     {user && (
       <div className="text-[#666] text-xs pb-1 flex gap-3 items-center">
           <a onClick={() => setView(ViewState.HOME)} className="font-bold hover:underline cursor-pointer text-[#2276BB]">Home</a>
@@ -41,7 +44,7 @@ const Header: React.FC<{
            <button onClick={() => setView(ViewState.ADMIN)} className="text-red-600 font-bold hover:underline">[Admin]</button>
          )}
          <span className="text-gray-400">|</span>
-         <a onClick={() => window.location.reload()} className="hover:underline cursor-pointer text-[#2276BB]">Sign Out</a>
+         <a onClick={handleLogout} className="hover:underline cursor-pointer text-[#2276BB]">Sign Out</a>
       </div>
     )}
   </div>
@@ -49,15 +52,18 @@ const Header: React.FC<{
 
 export default function App() {
   // --- STATE ---
-  const [view, setView] = useState<ViewState>(ViewState.LOGIN); // Start at LOGIN
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
-  const [posts, setPosts] = useState<Post[]>(INITIAL_POSTS);
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [useServer, setUseServer] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const [users, setUsers] = useState<User[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [view, setView] = useState<ViewState>(ViewState.LOGIN);
   
   // Auth Form State
   const [loginUsername, setLoginUsername] = useState('');
-  const [loginPassword, setLoginPassword] = useState(''); // Visual only
+  const [loginPassword, setLoginPassword] = useState('');
   const [signupUsername, setSignupUsername] = useState('');
   
   // UI State
@@ -70,7 +76,7 @@ export default function App() {
   
   // Interaction State
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
-  const [replyingTo, setReplyingTo] = useState<string | null>(null); // post id
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
 
   // Computed
@@ -78,11 +84,53 @@ export default function App() {
   const activeProfile = users.find(u => u.id === activeProfileId) || currentUser;
   const unreadCount = currentUser ? messages.filter(m => m.receiverId === currentUser.id && !m.read).length : 0;
 
+  // --- INITIALIZATION ---
   useEffect(() => {
-    generateProfileBio().then(setBio);
+    const init = async () => {
+        setLoading(true);
+        // 1. Check Server
+        const hasServer = await api.checkHealth();
+        setUseServer(hasServer);
+        
+        // 2. Fetch Data
+        const [u, p, m] = await Promise.all([
+            api.getUsers(hasServer),
+            api.getPosts(hasServer),
+            api.getMessages(hasServer)
+        ]);
+
+        setUsers(u);
+        setPosts(p);
+        setMessages(m);
+
+        // 3. Restore Session
+        const sessId = api.getSession();
+        if (sessId && u.find(user => user.id === sessId)) {
+            setCurrentUserId(sessId);
+            setView(ViewState.HOME);
+        } else {
+            setView(ViewState.LOGIN);
+        }
+
+        const bioText = await generateProfileBio();
+        setBio(bioText);
+        setLoading(false);
+    };
+    init();
   }, []);
 
   // --- ACTIONS ---
+
+  const reloadData = async () => {
+      const [u, p, m] = await Promise.all([
+          api.getUsers(useServer),
+          api.getPosts(useServer),
+          api.getMessages(useServer)
+      ]);
+      setUsers(u);
+      setPosts(p);
+      setMessages(m);
+  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,6 +141,7 @@ export default function App() {
         return;
       }
       setCurrentUserId(user.id);
+      api.setSession(user.id);
       setView(ViewState.HOME);
     } else {
       alert("User not found! Try signing up.");
@@ -103,8 +152,9 @@ export default function App() {
     e.preventDefault();
     if (!signupUsername.trim()) return;
     
-    // Check if exists
-    if (users.find(u => u.username.toLowerCase() === signupUsername.toLowerCase())) {
+    // Refresh users to be safe
+    const latestUsers = await api.getUsers(useServer);
+    if (latestUsers.find(u => u.username.toLowerCase() === signupUsername.toLowerCase())) {
         alert("Username taken!");
         return;
     }
@@ -123,16 +173,12 @@ export default function App() {
         following: []
     };
 
-    // If this is the VERY first user OR username is 'admin', make them admin
-    if (users.length === 0 || signupUsername.toLowerCase() === 'admin') {
+    if (latestUsers.length === 0 || signupUsername.toLowerCase() === 'admin') {
         newUser.isAdmin = true;
     }
 
-    setUsers([...users, newUser]);
-    setCurrentUserId(newUser.id);
-    setView(ViewState.HOME);
+    await api.createUser(newUser, useServer);
     
-    // Generate a welcome blog
     const welcomeBlog: Post = {
         id: `p-${Date.now()}`,
         type: 'blog',
@@ -146,7 +192,20 @@ export default function App() {
         likes: [],
         comments: []
     };
-    setPosts([welcomeBlog, ...posts]);
+    await api.createPost(welcomeBlog, useServer);
+
+    await reloadData();
+    setCurrentUserId(newUser.id);
+    api.setSession(newUser.id);
+    setView(ViewState.HOME);
+  };
+
+  const handleLogout = () => {
+    setCurrentUserId(null);
+    api.setSession(null);
+    setView(ViewState.LOGIN);
+    setLoginUsername('');
+    setLoginPassword('');
   };
 
   const handlePostSubmit = async () => {
@@ -166,79 +225,119 @@ export default function App() {
       comments: []
     };
 
-    setPosts([newPost, ...posts]);
+    await api.createPost(newPost, useServer);
+    await reloadData();
+
     setNewPostContent('');
     setBlogTitle('');
     
-    // AI Reply Simulation
+    // AI Reply Simulation (Simplified for async)
     if (Math.random() > 0.3 && users.length > 1) {
-      const otherUsers = users.filter(u => u.id !== currentUser.id);
-      if (otherUsers.length > 0) {
-        const randomFriend = otherUsers[Math.floor(Math.random() * otherUsers.length)];
-        const replyText = await generateAIComment(newPostContent);
-        setTimeout(() => {
-           handleAddComment(newPost.id, replyText, randomFriend);
-        }, 5000);
-      }
+      setTimeout(async () => {
+         const latestPosts = await api.getPosts(useServer);
+         const targetPost = latestPosts.find(p => p.id === newPost.id);
+         if (!targetPost) return;
+
+         const replyText = await generateAIComment(newPostContent);
+         const otherUsers = users.filter(u => u.id !== currentUser.id);
+         const randomFriend = otherUsers.length > 0 ? otherUsers[Math.floor(Math.random() * otherUsers.length)] : null;
+         
+         if (randomFriend) {
+             const updatedPost = {
+                 ...targetPost,
+                 comments: [...targetPost.comments, {
+                     id: `c-${Date.now()}`,
+                     authorId: randomFriend.id,
+                     authorName: randomFriend.username,
+                     content: replyText,
+                     timestamp: 'just now'
+                 }]
+             };
+             await api.updatePost(updatedPost, useServer);
+             await reloadData();
+         }
+      }, 5000);
     }
   };
 
-  const handleAddComment = (postId: string, text: string, authorOverride?: User) => {
-    const author = authorOverride || currentUser;
-    if (!author) return;
-    setPosts(prevPosts => prevPosts.map(post => {
-      if (post.id === postId) {
-        return {
-          ...post,
-          comments: [...post.comments, {
+  const handleAddComment = async (postId: string, text: string) => {
+    if (!currentUser) return;
+    const post = posts.find(p => p.id === postId);
+    if (!post) return;
+
+    const updatedPost = {
+        ...post,
+        comments: [...post.comments, {
             id: `c-${Date.now()}`,
-            authorId: author.id,
-            authorName: author.username,
+            authorId: currentUser.id,
+            authorName: currentUser.username,
             content: text,
             timestamp: 'just now'
-          }]
-        };
-      }
-      return post;
-    }));
+        }]
+    };
+    await api.updatePost(updatedPost, useServer);
+    await reloadData();
   };
 
-  const handleLikePost = (postId: string) => {
+  const handleLikePost = async (postId: string) => {
     if (!currentUser) return;
-    setPosts(prevPosts => prevPosts.map(post => {
-      if (post.id === postId) {
-        const isLiked = post.likes.includes(currentUser.id);
-        return {
-          ...post,
-          likes: isLiked ? post.likes.filter(id => id !== currentUser.id) : [...post.likes, currentUser.id]
-        };
-      }
-      return post;
-    }));
+    const post = posts.find(p => p.id === postId);
+    if (!post) return;
+
+    const isLiked = post.likes.includes(currentUser.id);
+    const updatedPost = {
+        ...post,
+        likes: isLiked ? post.likes.filter(id => id !== currentUser.id) : [...post.likes, currentUser.id]
+    };
+    await api.updatePost(updatedPost, useServer);
+    await reloadData();
   };
 
-  const handleFollow = (targetId: string) => {
+  const handleFollow = async (targetId: string) => {
     if (!currentUser) return;
-    setUsers(prevUsers => prevUsers.map(u => {
-      if (u.id === currentUser.id) {
-        const isFollowing = u.following.includes(targetId);
-        return { ...u, following: isFollowing ? u.following.filter(id => id !== targetId) : [...u.following, targetId] };
-      }
-      if (u.id === targetId) {
-        const isFollowed = u.followers.includes(currentUser.id);
-        return { ...u, followers: isFollowed ? u.followers.filter(id => id !== currentUser.id) : [...u.followers, currentUser.id] };
-      }
-      return u;
-    }));
+    
+    const targetUser = users.find(u => u.id === targetId);
+    if (!targetUser) return;
+
+    // Update Current User (Following)
+    const isFollowing = currentUser.following.includes(targetId);
+    const updatedCurrentUser = {
+        ...currentUser,
+        following: isFollowing ? currentUser.following.filter(id => id !== targetId) : [...currentUser.following, targetId]
+    };
+    
+    // Update Target User (Followers)
+    const updatedTargetUser = {
+        ...targetUser,
+        followers: isFollowing ? targetUser.followers.filter(id => id !== currentUser.id) : [...targetUser.followers, currentUser.id]
+    };
+
+    await api.updateUser(updatedCurrentUser, useServer);
+    await api.updateUser(updatedTargetUser, useServer);
+    await reloadData();
   };
 
-  const handleBanUser = (userId: string, durationMinutes: number) => {
+  const handleBanUser = async (userId: string, durationMinutes: number) => {
+    const userToBan = users.find(u => u.id === userId);
+    if (!userToBan) return;
+
     const until = durationMinutes === -1 ? null : Date.now() + (durationMinutes * 60000); 
-    setUsers(users.map(u => u.id === userId ? { ...u, isBanned: true, bannedUntil: until } : u));
+    const updatedUser = { ...userToBan, isBanned: true, bannedUntil: until };
+    
+    await api.updateUser(updatedUser, useServer);
+    await reloadData();
   };
 
-  const handleDeletePost = (postId: string) => {
-    setPosts(posts.filter(p => p.id !== postId));
+  const handleUnbanUser = async (userId: string) => {
+      const user = users.find(u => u.id === userId);
+      if(!user) return;
+      await api.updateUser({ ...user, isBanned: false }, useServer);
+      await reloadData();
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    await api.deletePost(postId, useServer);
+    await reloadData();
   };
 
   const handleGenerateIdea = async () => {
@@ -254,9 +353,26 @@ export default function App() {
     setAiGenerating(false);
   };
 
-  const handleThemeChange = (index: number) => {
+  const handleThemeChange = async (index: number) => {
     if (!currentUser) return;
-     setUsers(users.map(u => u.id === currentUser.id ? { ...u, theme: PRESET_THEMES[index] } : u));
+    const updatedUser = { ...currentUser, theme: PRESET_THEMES[index] };
+    await api.updateUser(updatedUser, useServer);
+    await reloadData();
+  };
+
+  const handleSendMessage = async (receiverId: string, content: string) => {
+      if(!currentUser) return;
+      const newMsg: Message = { 
+          id: `m-${Date.now()}`, 
+          senderId: currentUser.id, 
+          receiverId, 
+          content, 
+          timestamp: 'Just now', 
+          createdAt: Date.now(), 
+          read: false 
+      };
+      await api.createMessage(newMsg, useServer);
+      await reloadData();
   };
 
   const navigateToProfile = (userId: string) => {
@@ -264,12 +380,26 @@ export default function App() {
     setView(ViewState.PROFILE);
   };
 
-  // --- VIEW RENDERING ---
+  // --- RENDERING ---
 
-  // 1. LOGIN VIEW (Twitter 2007 Style)
+  if (loading) {
+      return (
+          <div className="min-h-screen bg-[#8edbf5] flex items-center justify-center">
+              <div className="bg-white p-6 border-2 border-blue-300 shadow-lg text-center">
+                  <h1 className="retro-logo text-4xl mb-2 text-blue-400">retrospace</h1>
+                  <p className="text-xs font-mono text-gray-500">Connecting to server...</p>
+                  <div className="mt-4 w-32 h-2 bg-gray-200 mx-auto overflow-hidden border border-gray-400">
+                      <div className="h-full bg-blue-500 animate-pulse w-1/2"></div>
+                  </div>
+              </div>
+          </div>
+      );
+  }
+
+  // 1. LOGIN VIEW
   const renderLogin = () => (
     <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
-       <Header user={null} onlineCount={4582} setView={setView} unreadCount={0} />
+       <Header user={null} onlineCount={4582} setView={setView} unreadCount={0} handleLogout={handleLogout} serverStatus={useServer} />
        
        <div className="flex gap-4">
          {/* LEFT: Intro */}
@@ -277,7 +407,6 @@ export default function App() {
             <h2 className="text-xl mb-1 leading-tight text-[#333] font-bold">
                A global community of friends and strangers answering one simple question: <span className="highlight-yellow">What are you doing?</span> Answer on your phone, IM, or right here on the web!
             </h2>
-            
             <p className="text-sm mb-4 text-[#666]">Look at what <a href="#">these people</a> are doing right now...</p>
          </div>
 
@@ -321,7 +450,7 @@ export default function App() {
   // 2. SIGNUP VIEW
   const renderSignup = () => (
     <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
-       <Header user={null} onlineCount={4582} setView={setView} unreadCount={0} />
+       <Header user={null} onlineCount={4582} setView={setView} unreadCount={0} handleLogout={handleLogout} serverStatus={useServer} />
        
        <div className="bg-[#E8FDC1] border border-[#a3dba8] p-4 max-w-[500px] mx-auto mt-10">
           <h2 className="font-bold text-lg mb-4 text-center">Join the Retrospace!</h2>
@@ -363,12 +492,12 @@ export default function App() {
     </div>
   );
 
-  // 3. HOME VIEW (Twitter 2007)
+  // 3. HOME VIEW
   const renderHome = () => {
     if (!currentUser) return null;
     return (
     <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
-      <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} />
+      <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} handleLogout={handleLogout} serverStatus={useServer} />
 
       <div className="flex gap-4">
         {/* MAIN FEED */}
@@ -546,7 +675,7 @@ export default function App() {
     </div>
   )};
 
-  // 4. PROFILE VIEW (Unified Design)
+  // 4. PROFILE VIEW
   const renderProfile = () => {
     if (!currentUser) return null;
     const isOwnProfile = activeProfile.id === currentUser.id;
@@ -562,7 +691,7 @@ export default function App() {
 
     return (
       <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
-        <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} />
+        <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} handleLogout={handleLogout} serverStatus={useServer} />
         
         <div className="flex gap-4">
           {/* LEFT COL: Profile Info */}
@@ -588,8 +717,7 @@ export default function App() {
                       <button onClick={() => {
                            const msg = prompt("Quick Message:");
                            if (msg && msg.trim()) {
-                             const newMsg = { id: `m-${Date.now()}`, senderId: currentUser.id, receiverId: activeProfile.id, content: msg, timestamp: 'Just now', createdAt: Date.now(), read: false };
-                             setMessages([...messages, newMsg]);
+                             handleSendMessage(activeProfile.id, msg);
                            }
                       }} className="btn-retro">Msg</button>
                      </>
@@ -619,7 +747,7 @@ export default function App() {
 
           {/* RIGHT COL: Content */}
           <div className="w-[520px]">
-             {/* Styled Content Block with User Theme */}
+             {/* Styled Content Block */}
              <div className="border border-[#ccc] p-4 mb-4 rounded-sm" style={themeStyle}>
                 <h3 className="font-bold text-sm uppercase border-b border-gray-300 pb-1 mb-2" style={{ borderColor: activeProfile.theme.textColor }}>
                   About {activeProfile.username}
@@ -676,13 +804,13 @@ export default function App() {
     );
   };
 
-  // 5. MESSAGES VIEW (Updated to Grid)
+  // 5. MESSAGES VIEW
   const renderMessages = () => {
     if (!currentUser) return null;
     const inbox = messages.filter(m => m.receiverId === currentUser.id);
     return (
       <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
-         <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} />
+         <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} handleLogout={handleLogout} serverStatus={useServer} />
          
          <div className="flex gap-4">
              <div className="w-[150px] flex-shrink-0">
@@ -731,16 +859,19 @@ export default function App() {
     );
   };
 
-  // 6. ADMIN VIEW (Updated to Grid)
+  // 6. ADMIN VIEW
   const renderAdmin = () => {
     if (!currentUser) return null;
     return (
     <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px]">
-       <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} />
+       <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} handleLogout={handleLogout} serverStatus={useServer} />
        
        <div className="bg-white border-2 border-red-800 p-4">
           <div className="flex justify-between items-center mb-4 border-b border-red-200 pb-2">
              <h1 className="text-xl font-bold text-red-700">Moderator Control Panel</h1>
+             <button onClick={() => { if(confirm("NUKE DATABASE? (Local only)")) api.clearLocal(); }} className="btn-retro text-red-600 border-red-500">
+               [DANGER] Wipe Local Data
+             </button>
           </div>
           
           <div className="grid grid-cols-2 gap-4">
@@ -759,7 +890,7 @@ export default function App() {
                             </td>
                             <td>
                                {u.isBanned ? (
-                                  <button onClick={() => setUsers(users.map(user => user.id === u.id ? { ...user, isBanned: false } : user))} className="btn-retro">Unban</button>
+                                  <button onClick={() => handleUnbanUser(u.id)} className="btn-retro">Unban</button>
                                ) : (
                                   <div className="flex gap-1">
                                      <button onClick={() => handleBanUser(u.id, -1)} className="btn-retro text-red-700 border-red-300">Ban</button>
