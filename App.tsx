@@ -1,0 +1,815 @@
+import React, { useState, useEffect } from 'react';
+import { User, Post, ViewState, Comment, PostType, UserTheme, Message } from './types';
+import { generateRetroStatus, generateAIComment, generateProfileBio, generateBlogPost } from './services/geminiService';
+import { MusicPlayer } from './components/MusicPlayer';
+import { TopFriends } from './components/TopFriends';
+
+// --- INITIAL DATA & PRESETS ---
+
+const PRESET_THEMES: UserTheme[] = [
+  { backgroundUrl: '', backgroundColor: '#FFFFFF', fontFamily: 'Arial, sans-serif', textColor: '#333333', headerColor: '#E8FDC1', panelColor: '#FFFFFF' }, 
+  { backgroundUrl: '', backgroundColor: '#000000', fontFamily: 'Courier New, monospace', textColor: '#00FF00', headerColor: '#111111', panelColor: '#1a1a1a' }, 
+  { backgroundUrl: '', backgroundColor: '#ffeaf4', fontFamily: 'Comic Sans MS', textColor: '#d63384', headerColor: '#ffb3d9', panelColor: '#fff0f5' }, 
+  { backgroundUrl: '', backgroundColor: '#f0f0f0', fontFamily: 'Verdana, sans-serif', textColor: '#000066', headerColor: '#ccccff', panelColor: '#ffffff' },
+];
+
+// Empty start state
+const INITIAL_USERS: User[] = [];
+const INITIAL_POSTS: Post[] = [];
+const INITIAL_MESSAGES: Message[] = [];
+
+// --- COMMON COMPONENTS ---
+
+const Header: React.FC<{ 
+  user: User | null, 
+  onlineCount: number, 
+  setView: (v: ViewState) => void,
+  unreadCount: number 
+}> = ({ user, onlineCount, setView, unreadCount }) => (
+  <div className="flex justify-between items-end mb-6 mt-4 px-2 select-none">
+    <h1 className="retro-logo text-[50px] leading-none cursor-pointer" onClick={() => user ? setView(ViewState.HOME) : setView(ViewState.LOGIN)}>
+      retrospace
+    </h1>
+    {user && (
+      <div className="text-[#666] text-xs pb-1 flex gap-3 items-center">
+          <a onClick={() => setView(ViewState.HOME)} className="font-bold hover:underline cursor-pointer text-[#2276BB]">Home</a>
+          <a onClick={() => setView(ViewState.PROFILE)} className="font-bold hover:underline cursor-pointer text-[#2276BB]">Profile</a>
+          <a onClick={() => setView(ViewState.MESSAGES)} className="font-bold hover:underline cursor-pointer text-[#2276BB]">
+            Messages {unreadCount > 0 && <span className="bg-red-500 text-white px-1 rounded-sm">{unreadCount}</span>}
+          </a>
+         {user.isAdmin && (
+           <button onClick={() => setView(ViewState.ADMIN)} className="text-red-600 font-bold hover:underline">[Admin]</button>
+         )}
+         <span className="text-gray-400">|</span>
+         <a onClick={() => window.location.reload()} className="hover:underline cursor-pointer text-[#2276BB]">Sign Out</a>
+      </div>
+    )}
+  </div>
+);
+
+export default function App() {
+  // --- STATE ---
+  const [view, setView] = useState<ViewState>(ViewState.LOGIN); // Start at LOGIN
+  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
+  const [posts, setPosts] = useState<Post[]>(INITIAL_POSTS);
+  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  
+  // Auth Form State
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState(''); // Visual only
+  const [signupUsername, setSignupUsername] = useState('');
+  
+  // UI State
+  const [postMode, setPostMode] = useState<PostType>('status');
+  const [newPostContent, setNewPostContent] = useState('');
+  const [blogTitle, setBlogTitle] = useState('');
+  const [blogCategory, setBlogCategory] = useState('Life');
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [bio, setBio] = useState('Loading weird bio...');
+  
+  // Interaction State
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null); // post id
+  const [replyContent, setReplyContent] = useState('');
+
+  // Computed
+  const currentUser = users.find(u => u.id === currentUserId) || null;
+  const activeProfile = users.find(u => u.id === activeProfileId) || currentUser;
+  const unreadCount = currentUser ? messages.filter(m => m.receiverId === currentUser.id && !m.read).length : 0;
+
+  useEffect(() => {
+    generateProfileBio().then(setBio);
+  }, []);
+
+  // --- ACTIONS ---
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const user = users.find(u => u.username.toLowerCase() === loginUsername.toLowerCase());
+    if (user) {
+      if (user.isBanned) {
+        alert("This account is banned.");
+        return;
+      }
+      setCurrentUserId(user.id);
+      setView(ViewState.HOME);
+    } else {
+      alert("User not found! Try signing up.");
+    }
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!signupUsername.trim()) return;
+    
+    // Check if exists
+    if (users.find(u => u.username.toLowerCase() === signupUsername.toLowerCase())) {
+        alert("Username taken!");
+        return;
+    }
+
+    const newUser: User = {
+        id: `user-${Date.now()}`,
+        username: signupUsername,
+        avatarUrl: `https://picsum.photos/150/150?random=${Date.now()}`,
+        tagline: 'New to Retrospace!',
+        mood: 'New',
+        isOnline: true,
+        topFriends: [],
+        theme: PRESET_THEMES[0],
+        isAdmin: false, 
+        followers: [],
+        following: []
+    };
+
+    // If this is the VERY first user OR username is 'admin', make them admin
+    if (users.length === 0 || signupUsername.toLowerCase() === 'admin') {
+        newUser.isAdmin = true;
+    }
+
+    setUsers([...users, newUser]);
+    setCurrentUserId(newUser.id);
+    setView(ViewState.HOME);
+    
+    // Generate a welcome blog
+    const welcomeBlog: Post = {
+        id: `p-${Date.now()}`,
+        type: 'blog',
+        authorId: newUser.id,
+        authorName: newUser.username,
+        authorAvatar: newUser.avatarUrl,
+        title: 'My First Post',
+        category: 'General',
+        content: 'I just joined Retrospace! This place is cool.',
+        timestamp: 'Just now',
+        likes: [],
+        comments: []
+    };
+    setPosts([welcomeBlog, ...posts]);
+  };
+
+  const handlePostSubmit = async () => {
+    if (!newPostContent.trim() || !currentUser) return;
+
+    const newPost: Post = {
+      id: `p-${Date.now()}`,
+      type: postMode,
+      title: postMode === 'blog' ? (blogTitle || 'Untitled') : undefined,
+      category: postMode === 'blog' ? blogCategory : undefined,
+      authorId: currentUser.id,
+      authorName: currentUser.username,
+      authorAvatar: currentUser.avatarUrl,
+      content: newPostContent,
+      timestamp: 'less than 5 seconds ago',
+      likes: [],
+      comments: []
+    };
+
+    setPosts([newPost, ...posts]);
+    setNewPostContent('');
+    setBlogTitle('');
+    
+    // AI Reply Simulation
+    if (Math.random() > 0.3 && users.length > 1) {
+      const otherUsers = users.filter(u => u.id !== currentUser.id);
+      if (otherUsers.length > 0) {
+        const randomFriend = otherUsers[Math.floor(Math.random() * otherUsers.length)];
+        const replyText = await generateAIComment(newPostContent);
+        setTimeout(() => {
+           handleAddComment(newPost.id, replyText, randomFriend);
+        }, 5000);
+      }
+    }
+  };
+
+  const handleAddComment = (postId: string, text: string, authorOverride?: User) => {
+    const author = authorOverride || currentUser;
+    if (!author) return;
+    setPosts(prevPosts => prevPosts.map(post => {
+      if (post.id === postId) {
+        return {
+          ...post,
+          comments: [...post.comments, {
+            id: `c-${Date.now()}`,
+            authorId: author.id,
+            authorName: author.username,
+            content: text,
+            timestamp: 'just now'
+          }]
+        };
+      }
+      return post;
+    }));
+  };
+
+  const handleLikePost = (postId: string) => {
+    if (!currentUser) return;
+    setPosts(prevPosts => prevPosts.map(post => {
+      if (post.id === postId) {
+        const isLiked = post.likes.includes(currentUser.id);
+        return {
+          ...post,
+          likes: isLiked ? post.likes.filter(id => id !== currentUser.id) : [...post.likes, currentUser.id]
+        };
+      }
+      return post;
+    }));
+  };
+
+  const handleFollow = (targetId: string) => {
+    if (!currentUser) return;
+    setUsers(prevUsers => prevUsers.map(u => {
+      if (u.id === currentUser.id) {
+        const isFollowing = u.following.includes(targetId);
+        return { ...u, following: isFollowing ? u.following.filter(id => id !== targetId) : [...u.following, targetId] };
+      }
+      if (u.id === targetId) {
+        const isFollowed = u.followers.includes(currentUser.id);
+        return { ...u, followers: isFollowed ? u.followers.filter(id => id !== currentUser.id) : [...u.followers, currentUser.id] };
+      }
+      return u;
+    }));
+  };
+
+  const handleBanUser = (userId: string, durationMinutes: number) => {
+    const until = durationMinutes === -1 ? null : Date.now() + (durationMinutes * 60000); 
+    setUsers(users.map(u => u.id === userId ? { ...u, isBanned: true, bannedUntil: until } : u));
+  };
+
+  const handleDeletePost = (postId: string) => {
+    setPosts(posts.filter(p => p.id !== postId));
+  };
+
+  const handleGenerateIdea = async () => {
+    setAiGenerating(true);
+    if (postMode === 'status') {
+      const idea = await generateRetroStatus();
+      setNewPostContent(idea);
+    } else {
+      const idea = await generateBlogPost(blogCategory);
+      setBlogTitle(idea.title);
+      setNewPostContent(idea.content);
+    }
+    setAiGenerating(false);
+  };
+
+  const handleThemeChange = (index: number) => {
+    if (!currentUser) return;
+     setUsers(users.map(u => u.id === currentUser.id ? { ...u, theme: PRESET_THEMES[index] } : u));
+  };
+
+  const navigateToProfile = (userId: string) => {
+    setActiveProfileId(userId);
+    setView(ViewState.PROFILE);
+  };
+
+  // --- VIEW RENDERING ---
+
+  // 1. LOGIN VIEW (Twitter 2007 Style)
+  const renderLogin = () => (
+    <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
+       <Header user={null} onlineCount={4582} setView={setView} unreadCount={0} />
+       
+       <div className="flex gap-4">
+         {/* LEFT: Intro */}
+         <div className="w-[520px]">
+            <h2 className="text-xl mb-1 leading-tight text-[#333] font-bold">
+               A global community of friends and strangers answering one simple question: <span className="highlight-yellow">What are you doing?</span> Answer on your phone, IM, or right here on the web!
+            </h2>
+            
+            <p className="text-sm mb-4 text-[#666]">Look at what <a href="#">these people</a> are doing right now...</p>
+         </div>
+
+         {/* RIGHT: Login Box */}
+         <div className="w-[200px] flex-shrink-0">
+            <div className="sidebar-box">
+               <div className="sidebar-header">
+                  <img src="https://aistudiocdn.com/icons/mascot.png" className="w-6 h-6" onError={(e) => e.currentTarget.style.display='none'} />
+                  Please Sign In!
+               </div>
+               <form onSubmit={handleLogin} className="flex flex-col gap-2">
+                  <div className="flex flex-col">
+                     <label className="text-[10px] text-[#666]">Username or Email</label>
+                     <input type="text" value={loginUsername} onChange={e => setLoginUsername(e.target.value)} />
+                  </div>
+                  <div className="flex flex-col">
+                     <label className="text-[10px] text-[#666]">Password</label>
+                     <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px]">
+                     <input type="checkbox" /> Remember me <a href="#" className="underline text-[#2276BB]">Forgot?</a>
+                  </div>
+                  <button type="submit" className="btn-login self-center">Sign In!</button>
+               </form>
+            </div>
+
+            <div className="bg-[#FFFFCC] border border-[#EEEEBB] p-3 text-center mb-4">
+               <div className="font-bold text-xs mb-1">Want an account?</div>
+               <a onClick={() => setView(ViewState.SIGNUP)} className="block font-bold bg-[#ffff00] text-blue-700 text-lg hover:underline cursor-pointer">Join for Free!</a>
+               <div className="text-[10px] text-[#666] mt-1">It's fast and easy!</div>
+            </div>
+         </div>
+       </div>
+
+       <div className="text-center text-[10px] text-[#666] mt-10 border-t border-[#ccc] pt-2">
+          &copy; 2007 Retrospace | <a href="#">About Us</a> | <a href="#">Contact</a> | <a href="#">Blog</a> | <a href="#">API</a> | <a href="#">Help</a>
+       </div>
+    </div>
+  );
+
+  // 2. SIGNUP VIEW
+  const renderSignup = () => (
+    <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
+       <Header user={null} onlineCount={4582} setView={setView} unreadCount={0} />
+       
+       <div className="bg-[#E8FDC1] border border-[#a3dba8] p-4 max-w-[500px] mx-auto mt-10">
+          <h2 className="font-bold text-lg mb-4 text-center">Join the Retrospace!</h2>
+          <form onSubmit={handleSignup} className="flex flex-col gap-4">
+              <div>
+                 <label className="block font-bold mb-1">Choose a Username:</label>
+                 <input 
+                   type="text" 
+                   className="w-full text-lg p-1"
+                   value={signupUsername}
+                   onChange={e => setSignupUsername(e.target.value)}
+                   required
+                 />
+                 <div className="text-xs text-gray-500 mt-1">Check availability</div>
+              </div>
+              
+              <div>
+                 <label className="block font-bold mb-1">Password:</label>
+                 <input type="password" className="w-full text-lg p-1" required />
+                 <div className="text-xs text-gray-500 mt-1">6 characters or more!</div>
+              </div>
+
+              <div>
+                 <label className="block font-bold mb-1">Email Address:</label>
+                 <input type="email" className="w-full text-lg p-1" required />
+                 <div className="text-xs text-gray-500 mt-1">We won't spam you. Much.</div>
+              </div>
+              
+              <div className="text-xs">
+                 <input type="checkbox" required /> I agree to the <a href="#" className="underline">Terms of Service</a>.
+              </div>
+
+              <div className="flex justify-between items-center mt-4">
+                 <a onClick={() => setView(ViewState.LOGIN)} className="underline cursor-pointer text-blue-600">Back to Login</a>
+                 <button type="submit" className="btn-retro text-lg px-6 py-2">Create my Account</button>
+              </div>
+          </form>
+       </div>
+    </div>
+  );
+
+  // 3. HOME VIEW (Twitter 2007)
+  const renderHome = () => {
+    if (!currentUser) return null;
+    return (
+    <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
+      <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} />
+
+      <div className="flex gap-4">
+        {/* MAIN FEED */}
+        <div className="w-[520px] bg-white border border-[#ccc] p-4 rounded-sm shadow-sm relative">
+          <h2 className="text-xl mb-3 leading-tight text-[#333]">
+            What are you doing?
+          </h2>
+
+          {/* INPUT */}
+          <div className="bg-[#E8FDC1] p-3 border border-[#a3dba8] mb-6 flex gap-2 items-start">
+             <div className="flex-1">
+                <div className="flex gap-2 mb-1 text-xs font-bold text-[#555]">
+                  <label className={`cursor-pointer hover:underline ${postMode === 'status' ? 'text-black' : ''}`} onClick={() => setPostMode('status')}>
+                    <input type="radio" checked={postMode === 'status'} readOnly className="mr-1" />
+                    Status
+                  </label>
+                  <label className={`cursor-pointer hover:underline ${postMode === 'blog' ? 'text-black' : ''}`} onClick={() => setPostMode('blog')}>
+                     <input type="radio" checked={postMode === 'blog'} readOnly className="mr-1" />
+                     Blog Entry
+                  </label>
+                </div>
+
+                {postMode === 'blog' && (
+                  <div className="mb-1">
+                     <input 
+                       className="w-full mb-1" 
+                       placeholder="Title..." 
+                       value={blogTitle} 
+                       onChange={e => setBlogTitle(e.target.value)} 
+                     />
+                     <select 
+                       className="w-full mb-1 text-xs"
+                       value={blogCategory}
+                       onChange={e => setBlogCategory(e.target.value)}
+                     >
+                        <option>General</option>
+                        <option>Music</option>
+                        <option>Rant</option>
+                        <option>School</option>
+                     </select>
+                  </div>
+                )}
+                
+                <textarea 
+                  className="w-full h-16 resize-none"
+                  value={newPostContent} 
+                  onChange={e => setNewPostContent(e.target.value)}
+                  placeholder={postMode === 'status' ? "I am currently..." : "Dear diary..."}
+                />
+                <div className="flex justify-between mt-1 items-center">
+                   <button onClick={handleGenerateIdea} className="text-[10px] text-blue-600 hover:underline" disabled={aiGenerating}>
+                     {aiGenerating ? "Generating..." : "Need an idea?"}
+                   </button>
+                   <span className="text-[10px] text-gray-500">{140 - newPostContent.length} chars</span>
+                </div>
+             </div>
+             <button onClick={handlePostSubmit} className="mt-6 font-bold text-lg cursor-pointer hover:text-gray-600">
+               update
+             </button>
+          </div>
+
+          {/* FEED LIST */}
+          <div className="space-y-0">
+             {posts.length === 0 && <div className="text-center text-gray-400 italic py-4">It's quiet here... post something!</div>}
+             {posts.map(post => (
+                <div key={post.id} className="feed-item flex-col items-start">
+                   <div className="flex gap-3 w-full">
+                      <div className="w-[50px] flex-shrink-0">
+                          <img 
+                            src={post.authorAvatar} 
+                            className="w-[48px] h-[48px] border border-[#ccc] p-[1px] cursor-pointer hover:border-blue-400" 
+                            onClick={() => navigateToProfile(post.authorId)}
+                          />
+                      </div>
+                      <div className="feed-content flex-1 text-[13px]">
+                          <a onClick={() => navigateToProfile(post.authorId)} className="font-bold underline cursor-pointer">
+                            {post.authorName}
+                          </a>
+                          {' '}
+                          {post.type === 'blog' ? (
+                            <span className="italic">
+                              blogged: <a className="font-bold">"{post.title}"</a>
+                              <br/>
+                              <span className="text-[#666]" dangerouslySetInnerHTML={{ __html: post.content.substring(0, 150) + '...' }} />
+                            </span>
+                          ) : (
+                            <span>{post.content}</span>
+                          )}
+                          
+                          <div className="mt-1 flex items-center gap-2 text-[11px] text-[#999]">
+                             <span className="hover:underline cursor-pointer">{post.timestamp}</span>
+                             <span>from web</span>
+                             {post.likes.length > 0 && <span className="text-red-500">&hearts; {post.likes.length}</span>}
+                          </div>
+                          
+                          <div className="mt-1 text-[10px] space-x-2">
+                             <a className="action-link cursor-pointer" onClick={() => setReplyingTo(replyingTo === post.id ? null : post.id)}>Reply</a>
+                             <a className="action-link cursor-pointer" onClick={() => handleLikePost(post.id)}>
+                               {post.likes.includes(currentUser.id) ? 'Unlike' : 'Like'}
+                             </a>
+                          </div>
+
+                          {/* COMMENTS / REPLY AREA */}
+                          {post.comments.length > 0 && (
+                             <div className="mt-2 pl-2 border-l-2 border-[#eee]">
+                                {post.comments.map(c => (
+                                   <div key={c.id} className="text-[11px] mb-1">
+                                      <span className="font-bold text-blue-600">{c.authorName}:</span> {c.content}
+                                   </div>
+                                ))}
+                             </div>
+                          )}
+                          
+                          {replyingTo === post.id && (
+                             <div className="mt-2 flex gap-1">
+                                <input 
+                                  className="border border-[#ccc] text-xs flex-1" 
+                                  value={replyContent} 
+                                  onChange={e => setReplyContent(e.target.value)} 
+                                  placeholder="Write a reply..."
+                                />
+                                <button 
+                                  className="btn-retro"
+                                  onClick={() => {
+                                     if(replyContent.trim()) {
+                                       handleAddComment(post.id, replyContent);
+                                       setReplyContent('');
+                                       setReplyingTo(null);
+                                     }
+                                  }}
+                                >Post</button>
+                             </div>
+                          )}
+                      </div>
+                   </div>
+                </div>
+             ))}
+          </div>
+        </div>
+
+        {/* SIDEBAR */}
+        <div className="w-[200px] flex-shrink-0">
+          <div className="sidebar-box">
+             <div className="flex items-center gap-2 mb-2">
+                <img src="https://aistudiocdn.com/icons/mascot.png" className="w-8 h-8" onError={(e) => e.currentTarget.style.display='none'} />
+                <span className="font-bold text-sm">Welcome back!</span>
+             </div>
+             <div className="bg-white p-2 border border-[#ccc] mb-2">
+                <div className="font-bold text-blue-600 mb-1">{currentUser.username}</div>
+                <div className="text-xs text-gray-500 mb-2">
+                   {posts.filter(p => p.authorId === currentUser.id).length} posts | {currentUser.followers.length} followers
+                </div>
+                <button 
+                  onClick={() => navigateToProfile(currentUser.id)}
+                  className="w-full font-bold text-center border border-gray-400 bg-[#f8f8f8] py-1 text-xs hover:bg-white mb-1"
+                >
+                  My Profile
+                </button>
+             </div>
+          </div>
+          
+          <div className="bg-white border border-[#ccc] p-2 mb-4">
+             <h3 className="font-bold text-[#333] mb-2 border-b border-[#eee] pb-1">Who to follow</h3>
+             <div className="grid grid-cols-2 gap-2">
+                {users.filter(u => u.id !== currentUser.id).slice(0, 6).map(u => (
+                   <div key={u.id} className="text-center overflow-hidden">
+                      <img src={u.avatarUrl} className="w-[36px] h-[36px] border border-[#ccc] mx-auto cursor-pointer" onClick={() => navigateToProfile(u.id)} />
+                      <a onClick={() => navigateToProfile(u.id)} className="text-[10px] block truncate mt-1 cursor-pointer hover:underline">{u.username}</a>
+                   </div>
+                ))}
+             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )};
+
+  // 4. PROFILE VIEW (Unified Design)
+  const renderProfile = () => {
+    if (!currentUser) return null;
+    const isOwnProfile = activeProfile.id === currentUser.id;
+    const userPosts = posts.filter(p => p.authorId === activeProfile.id);
+    const topFriends = users.filter(u => activeProfile.topFriends?.includes(u.id));
+
+    // Apply user theme to inner content only
+    const themeStyle = {
+      backgroundColor: activeProfile.theme.backgroundColor,
+      color: activeProfile.theme.textColor,
+      fontFamily: activeProfile.theme.fontFamily,
+    };
+
+    return (
+      <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
+        <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} />
+        
+        <div className="flex gap-4">
+          {/* LEFT COL: Profile Info */}
+          <div className="w-[200px] flex-shrink-0">
+             <div className="bg-white border border-[#ccc] p-3 mb-3 text-center">
+                 <img src={activeProfile.avatarUrl} className="w-[150px] h-[150px] mx-auto border border-gray-300 p-1 mb-2" />
+                 <h2 className="font-bold text-lg leading-tight break-words">{activeProfile.username}</h2>
+                 <div className="text-xs text-gray-500 mb-2">{activeProfile.tagline}</div>
+                 
+                 {activeProfile.isBanned && <div className="text-red-600 font-bold mb-2 border border-red-500 bg-red-100">BANNED</div>}
+                 
+                 <div className="flex justify-center gap-1 mb-3">
+                   {isOwnProfile ? (
+                     <button onClick={() => {
+                        const nextIndex = (PRESET_THEMES.findIndex(t => t.backgroundColor === activeProfile.theme.backgroundColor) + 1) % PRESET_THEMES.length;
+                        handleThemeChange(nextIndex);
+                     }} className="btn-retro w-full">Change Theme</button>
+                   ) : (
+                     <>
+                      <button onClick={() => handleFollow(activeProfile.id)} className="btn-retro">
+                        {currentUser.following.includes(activeProfile.id) ? 'Unfollow' : 'Follow'}
+                      </button>
+                      <button onClick={() => {
+                           const msg = prompt("Quick Message:");
+                           if (msg && msg.trim()) {
+                             const newMsg = { id: `m-${Date.now()}`, senderId: currentUser.id, receiverId: activeProfile.id, content: msg, timestamp: 'Just now', createdAt: Date.now(), read: false };
+                             setMessages([...messages, newMsg]);
+                           }
+                      }} className="btn-retro">Msg</button>
+                     </>
+                   )}
+                 </div>
+
+                 <div className="text-left text-xs space-y-1 text-gray-600 border-t border-gray-200 pt-2">
+                    <div><b>Age:</b> 24</div>
+                    <div><b>Gender:</b> Unknown</div>
+                    <div><b>Location:</b> Earth</div>
+                    <div className="mt-2"><b>{activeProfile.followers.length}</b> Followers</div>
+                    <div><b>{activeProfile.following.length}</b> Following</div>
+                 </div>
+             </div>
+
+             <div className="mb-3">
+                <MusicPlayer />
+             </div>
+             
+             {isOwnProfile && (
+               <div className="bg-[#E8FDC1] border border-[#a3dba8] p-2 text-xs text-center font-bold">
+                 This is your profile.<br/>
+                 <a href="#" className="underline">Edit Profile</a>
+               </div>
+             )}
+          </div>
+
+          {/* RIGHT COL: Content */}
+          <div className="w-[520px]">
+             {/* Styled Content Block with User Theme */}
+             <div className="border border-[#ccc] p-4 mb-4 rounded-sm" style={themeStyle}>
+                <h3 className="font-bold text-sm uppercase border-b border-gray-300 pb-1 mb-2" style={{ borderColor: activeProfile.theme.textColor }}>
+                  About {activeProfile.username}
+                </h3>
+                <p className="text-sm mb-4 leading-relaxed whitespace-pre-line">
+                   {bio}
+                </p>
+
+                <h3 className="font-bold text-sm uppercase border-b border-gray-300 pb-1 mb-2" style={{ borderColor: activeProfile.theme.textColor }}>
+                  Interests
+                </h3>
+                <div className="grid grid-cols-2 gap-2 text-xs mb-4">
+                   <div className="bg-white/20 p-1"><b>Music:</b> Rock, Indie, 8-bit</div>
+                   <div className="bg-white/20 p-1"><b>TV:</b> Heroes, Lost</div>
+                </div>
+
+                <div className="bg-white/50 p-2 rounded">
+                   <TopFriends friends={topFriends} />
+                </div>
+             </div>
+             
+             {/* Feed */}
+             <div className="bg-white border border-[#ccc] p-3 rounded-sm">
+                <h3 className="font-bold text-gray-700 mb-3 text-sm">Latest Updates</h3>
+                <div className="space-y-4">
+                  {userPosts.length === 0 && <div className="text-gray-400 italic">No updates yet.</div>}
+                  {userPosts.map(post => (
+                    <div key={post.id} className="feed-item flex-col items-start border-b border-gray-200 pb-2">
+                        <div className="flex gap-2 w-full">
+                           <div className="feed-content flex-1 text-[13px]">
+                               <div className="flex justify-between">
+                                  <span className="font-bold">{post.title || 'Status Update'}</span>
+                                  <span className="text-[10px] text-gray-400">{post.timestamp}</span>
+                               </div>
+                               
+                               <div className="mt-1 mb-2" dangerouslySetInnerHTML={{ __html: post.content }} />
+                               
+                               <div className="text-[10px] space-x-2 text-gray-500">
+                                  <span>{post.likes.length} Likes</span>
+                                  <span>&bull;</span>
+                                  <a className="action-link cursor-pointer" onClick={() => handleLikePost(post.id)}>
+                                    {post.likes.includes(currentUser.id) ? 'Unlike' : 'Like'}
+                                  </a>
+                               </div>
+                           </div>
+                        </div>
+                    </div>
+                  ))}
+                </div>
+             </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // 5. MESSAGES VIEW (Updated to Grid)
+  const renderMessages = () => {
+    if (!currentUser) return null;
+    const inbox = messages.filter(m => m.receiverId === currentUser.id);
+    return (
+      <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
+         <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} />
+         
+         <div className="flex gap-4">
+             <div className="w-[150px] flex-shrink-0">
+                <div className="bg-[#E8FDC1] border border-[#a3dba8] p-2 font-bold mb-2">RetroMail</div>
+                <div className="bg-white border border-[#ccc] text-xs">
+                   <div className="p-2 bg-[#f0f0f0] font-bold border-b border-[#eee]">Inbox ({unreadCount})</div>
+                   <div className="p-2 hover:bg-[#f9f9f9] cursor-pointer">Sent Items</div>
+                   <div className="p-2 hover:bg-[#f9f9f9] cursor-pointer">Trash</div>
+                </div>
+             </div>
+             
+             <div className="flex-1 bg-white border border-[#ccc] p-3">
+                <div className="flex justify-between items-center mb-3 bg-[#eee] p-1 border border-[#ddd]">
+                   <span className="font-bold">Inbox</span>
+                   <button className="btn-retro">Delete Marked</button>
+                </div>
+                
+                <table className="w-full text-xs">
+                   <thead>
+                      <tr className="text-left text-gray-500 border-b border-gray-300">
+                         <th className="p-1 w-6"></th>
+                         <th className="p-1">From</th>
+                         <th className="p-1">Subject</th>
+                         <th className="p-1 w-20">Date</th>
+                      </tr>
+                   </thead>
+                   <tbody>
+                      {inbox.map(msg => (
+                         <tr key={msg.id} className={`border-b border-gray-100 hover:bg-[#f9f9f9] ${!msg.read ? 'font-bold' : 'text-gray-600'}`}>
+                            <td className="p-1"><input type="checkbox" /></td>
+                            <td className="p-1 cursor-pointer" onClick={() => navigateToProfile(msg.senderId)}>
+                               {users.find(u => u.id === msg.senderId)?.username || 'Unknown'}
+                            </td>
+                            <td className="p-1">
+                               <span className="cursor-pointer hover:text-blue-600">{msg.content.substring(0, 50)}...</span>
+                            </td>
+                            <td className="p-1 text-[10px]">{msg.timestamp}</td>
+                         </tr>
+                      ))}
+                      {inbox.length === 0 && <tr><td colSpan={4} className="p-4 text-center italic text-gray-400">No messages found.</td></tr>}
+                   </tbody>
+                </table>
+             </div>
+         </div>
+      </div>
+    );
+  };
+
+  // 6. ADMIN VIEW (Updated to Grid)
+  const renderAdmin = () => {
+    if (!currentUser) return null;
+    return (
+    <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px]">
+       <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} />
+       
+       <div className="bg-white border-2 border-red-800 p-4">
+          <div className="flex justify-between items-center mb-4 border-b border-red-200 pb-2">
+             <h1 className="text-xl font-bold text-red-700">Moderator Control Panel</h1>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+             <div>
+                <h3 className="bg-red-700 text-white p-1 font-bold mb-2 text-xs uppercase">User Management</h3>
+                <table className="retro-table">
+                   <thead><tr><th>User</th><th>Status</th><th>Action</th></tr></thead>
+                   <tbody>
+                      {users.map(u => (
+                         <tr key={u.id}>
+                            <td>
+                               <div className="font-bold text-blue-800 cursor-pointer" onClick={() => navigateToProfile(u.id)}>{u.username}</div>
+                            </td>
+                            <td>
+                               {u.isBanned ? <span className="text-red-600 font-bold text-[10px]">BANNED</span> : <span className="text-green-600 text-[10px]">Active</span>}
+                            </td>
+                            <td>
+                               {u.isBanned ? (
+                                  <button onClick={() => setUsers(users.map(user => user.id === u.id ? { ...user, isBanned: false } : user))} className="btn-retro">Unban</button>
+                               ) : (
+                                  <div className="flex gap-1">
+                                     <button onClick={() => handleBanUser(u.id, -1)} className="btn-retro text-red-700 border-red-300">Ban</button>
+                                  </div>
+                               )}
+                            </td>
+                         </tr>
+                      ))}
+                   </tbody>
+                </table>
+             </div>
+             
+             <div>
+                <h3 className="bg-gray-700 text-white p-1 font-bold mb-2 text-xs uppercase">Recent Posts</h3>
+                <div className="space-y-1">
+                      {posts.slice(0, 8).map(p => (
+                         <div key={p.id} className="flex justify-between items-center border border-gray-200 p-1 hover:bg-red-50">
+                            <div className="truncate w-40 text-[10px]">
+                               <span className="font-bold">{p.authorName}:</span> {p.content}
+                            </div>
+                            <button onClick={() => handleDeletePost(p.id)} className="text-red-600 font-bold text-[10px] hover:underline">[Del]</button>
+                         </div>
+                      ))}
+                </div>
+             </div>
+          </div>
+       </div>
+    </div>
+  )};
+
+  // ROUTER
+  if (currentUser?.isBanned) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center text-center font-sans">
+         <div>
+            <h1 className="text-4xl font-bold text-red-600 mb-2">Account Suspended</h1>
+            <p className="text-gray-600">This account has been suspended due to strange activity.</p>
+            <p className="mt-4 text-xs text-gray-400">Error Code: 404_NOT_FOUND_IN_SPACE</p>
+            <button onClick={() => window.location.reload()} className="mt-4 underline">Try again</button>
+         </div>
+      </div>
+    );
+  }
+
+  switch(view) {
+    case ViewState.LOGIN: return renderLogin();
+    case ViewState.SIGNUP: return renderSignup();
+    case ViewState.PROFILE: return renderProfile();
+    case ViewState.MESSAGES: return renderMessages();
+    case ViewState.ADMIN: return currentUser?.isAdmin ? renderAdmin() : renderHome();
+    default: return renderHome();
+  }
+}

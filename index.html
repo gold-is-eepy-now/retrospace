@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Retrospace</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* 2007 Twitter / Web 2.0 Aesthetics */
+      body {
+        background-color: #8edbf5; /* Classic Twitter Blue */
+        background-image: 
+          radial-gradient(circle at 50% 100px, #bcedfa 0%, transparent 60%),
+          linear-gradient(to bottom, #8edbf5 0%, #ffffff 100%);
+        background-attachment: fixed;
+        font-family: "Arial", "Helvetica", sans-serif;
+        font-size: 13px; /* Smaller web 1.0 font size */
+        color: #333;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* Logo Font simulation */
+      .retro-logo {
+        font-family: "Arial Rounded MT Bold", "Helvetica Rounded", Arial, sans-serif;
+        color: white;
+        text-shadow: 2px 2px 0px #5ebbd7;
+        letter-spacing: -2px;
+      }
+
+      /* Links */
+      a { color: #2276BB; text-decoration: none; cursor: pointer; }
+      a:hover { text-decoration: underline; color: #2276BB; }
+      
+      /* Sidebar Green Box */
+      .sidebar-box {
+        background-color: #E8FDC1;
+        border: 1px solid #a3dba8;
+        padding: 10px;
+        margin-bottom: 15px;
+      }
+      
+      .sidebar-header {
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 5px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      /* Yellow Highlights */
+      .highlight-yellow {
+        background-color: #ffff00;
+        padding: 0 2px;
+        font-weight: bold;
+      }
+
+      /* Form Elements */
+      input[type="text"], input[type="password"], textarea, select {
+        border: 1px solid #aaa;
+        padding: 4px;
+        font-size: 13px;
+        font-family: Arial, sans-serif;
+      }
+      
+      .btn-retro {
+        background: #f0f0f0;
+        border: 1px solid #999;
+        color: #333;
+        font-size: 11px;
+        font-weight: bold;
+        padding: 2px 6px;
+        cursor: pointer;
+        background-image: linear-gradient(to bottom, #fff, #ddd);
+      }
+      .btn-retro:active {
+        background-image: linear-gradient(to bottom, #ddd, #fff);
+      }
+      .btn-retro:hover {
+        border-color: #666;
+      }
+      
+      /* Specific Login Button */
+      .btn-login {
+        font-size: 13px;
+        font-weight: bold;
+        padding: 2px 10px;
+        cursor: pointer;
+        background: #eee;
+        border: 1px solid #999;
+        border-radius: 2px;
+      }
+
+      /* Feed Item styles */
+      .feed-item {
+        border-bottom: 1px solid #eee;
+        padding: 10px 0;
+        display: flex;
+        gap: 10px;
+      }
+      .feed-timestamp {
+        font-size: 11px;
+        color: #999;
+      }
+      .feed-source {
+        font-size: 11px;
+        color: #999;
+      }
+      .feed-content {
+        line-height: 1.4;
+      }
+
+      /* MySpace Specific Overrides for Profile View */
+      .myspace-body {
+        background-color: #e5e5e5;
+        background-image: url('https://www.transparenttextures.com/patterns/notebook.png');
+      }
+      
+      .cursor-retro {
+        cursor: url('https://cur.cursors-4u.net/cursors/cur-2/cur116.cur'), auto;
+      }
+
+      /* Admin & Messages Tables */
+      .retro-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+        background: white;
+      }
+      .retro-table th {
+        background: #eee;
+        border: 1px solid #ccc;
+        padding: 4px;
+        text-align: left;
+      }
+      .retro-table td {
+        border: 1px solid #ccc;
+        padding: 4px;
+      }
+      .retro-table tr:hover {
+        background-color: #f9f9f9;
+      }
+      
+      /* Action Links */
+      .action-link {
+        color: #888;
+        font-size: 11px;
+        margin-right: 5px;
+      }
+      .action-link:hover {
+        color: #d00;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
