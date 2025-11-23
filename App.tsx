@@ -119,6 +119,24 @@ export default function App() {
     init();
   }, []);
 
+  // --- EFFECT: BACKGROUND IMAGE HANDLING ---
+  useEffect(() => {
+    if (view === ViewState.PROFILE && activeProfile?.theme?.backgroundUrl) {
+       document.body.style.backgroundImage = `url('${activeProfile.theme.backgroundUrl}')`;
+       document.body.style.backgroundSize = 'cover';
+       document.body.style.backgroundRepeat = 'no-repeat';
+       document.body.style.backgroundPosition = 'center top';
+       document.body.style.backgroundAttachment = 'fixed';
+    } else {
+       // Reset to default CSS rules (managed by index.html classes)
+       document.body.style.backgroundImage = '';
+       document.body.style.backgroundSize = '';
+       document.body.style.backgroundRepeat = '';
+       document.body.style.backgroundPosition = '';
+       document.body.style.backgroundAttachment = '';
+    }
+  }, [view, activeProfile]);
+
   // --- ACTIONS ---
 
   const reloadData = async () => {
@@ -739,8 +757,31 @@ export default function App() {
              
              {isOwnProfile && (
                <div className="bg-[#E8FDC1] border border-[#a3dba8] p-2 text-xs text-center font-bold">
-                 This is your profile.<br/>
-                 <a href="#" className="underline">Edit Profile</a>
+                 <div className="mb-2">This is your profile.</div>
+                 
+                 {/* Background URL Input */}
+                 <div className="mb-2">
+                    <label className="block text-[10px] text-gray-500 mb-1">Custom Background URL</label>
+                    <input 
+                      type="text" 
+                      placeholder="http://..." 
+                      className="w-full text-[10px] mb-1 px-1"
+                      defaultValue={currentUser.theme.backgroundUrl || ''}
+                      onBlur={(e) => {
+                          if (e.target.value !== currentUser.theme.backgroundUrl) {
+                              const updatedUser = { 
+                                  ...currentUser, 
+                                  theme: { ...currentUser.theme, backgroundUrl: e.target.value } 
+                              };
+                              // Optimistic update
+                              setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
+                              api.updateUser(updatedUser, useServer);
+                          }
+                      }}
+                    />
+                 </div>
+
+                 <a href="#" className="underline">Edit Profile Info</a>
                </div>
              )}
           </div>
