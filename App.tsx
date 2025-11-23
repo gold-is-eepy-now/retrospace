@@ -78,6 +78,7 @@ export default function App() {
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Computed
   const currentUser = users.find(u => u.id === currentUserId) || null;
@@ -136,6 +137,53 @@ export default function App() {
        document.body.style.backgroundAttachment = '';
     }
   }, [view, activeProfile]);
+
+  // --- HELPERS ---
+
+  const renderContentWithTags = (content: string) => {
+    // Regex to find words starting with #
+    const parts = content.split(/((?:^|\s)#[a-zA-Z0-9_]+)/g);
+    return (
+      <span>
+        {parts.map((part, i) => {
+          if (part.trim().startsWith('#')) {
+             return (
+               <span 
+                 key={i} 
+                 className="text-[#2276BB] font-bold cursor-pointer hover:underline"
+                 onClick={(e) => {
+                   e.stopPropagation();
+                   setSearchQuery(part.trim());
+                   setView(ViewState.HOME);
+                 }}
+               >
+                 {part}
+               </span>
+             );
+          }
+          return <span key={i}>{part}</span>;
+        })}
+      </span>
+    );
+  };
+
+  const getFilteredPosts = () => {
+    let filtered = posts;
+    if (searchQuery) {
+       const lowerQ = searchQuery.toLowerCase();
+       filtered = filtered.filter(p => {
+          // Match hashtag exactly if query starts with #
+          if (lowerQ.startsWith('#')) {
+             return p.tags?.some(t => t.toLowerCase() === lowerQ) || p.content.toLowerCase().includes(lowerQ);
+          }
+          // Otherwise generic search
+          return p.content.toLowerCase().includes(lowerQ) || 
+                 p.authorName.toLowerCase().includes(lowerQ) ||
+                 p.title?.toLowerCase().includes(lowerQ);
+       });
+    }
+    return filtered;
+  };
 
   // --- ACTIONS ---
 
@@ -208,7 +256,8 @@ export default function App() {
         content: 'I just joined Retrospace! This place is cool.',
         timestamp: 'Just now',
         likes: [],
-        comments: []
+        comments: [],
+        tags: []
     };
     await api.createPost(welcomeBlog, useServer);
 
@@ -229,6 +278,9 @@ export default function App() {
   const handlePostSubmit = async () => {
     if (!newPostContent.trim() || !currentUser) return;
 
+    // Extract tags
+    const tags = newPostContent.match(/#[a-zA-Z0-9_]+/g) || [];
+
     const newPost: Post = {
       id: `p-${Date.now()}`,
       type: postMode,
@@ -240,7 +292,8 @@ export default function App() {
       content: newPostContent,
       timestamp: 'less than 5 seconds ago',
       likes: [],
-      comments: []
+      comments: [],
+      tags: tags as string[]
     };
 
     await api.createPost(newPost, useServer);
@@ -513,6 +566,8 @@ export default function App() {
   // 3. HOME VIEW
   const renderHome = () => {
     if (!currentUser) return null;
+    const filteredPosts = getFilteredPosts();
+    
     return (
     <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
       <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} handleLogout={handleLogout} serverStatus={useServer} />
@@ -520,8 +575,14 @@ export default function App() {
       <div className="flex gap-4">
         {/* MAIN FEED */}
         <div className="w-[520px] bg-white border border-[#ccc] p-4 rounded-sm shadow-sm relative">
-          <h2 className="text-xl mb-3 leading-tight text-[#333]">
-            What are you doing?
+          <h2 className="text-xl mb-3 leading-tight text-[#333] flex justify-between items-center">
+            <span>What are you doing?</span>
+            {searchQuery && (
+              <span className="text-xs font-normal bg-yellow-100 border border-yellow-300 px-2 py-1 rounded">
+                Filtering: <b>{searchQuery}</b> 
+                <button onClick={() => setSearchQuery('')} className="ml-2 text-red-600 font-bold hover:underline">X</button>
+              </span>
+            )}
           </h2>
 
           {/* INPUT */}
@@ -563,7 +624,7 @@ export default function App() {
                   className="w-full h-16 resize-none"
                   value={newPostContent} 
                   onChange={e => setNewPostContent(e.target.value)}
-                  placeholder={postMode === 'status' ? "I am currently..." : "Dear diary..."}
+                  placeholder={postMode === 'status' ? "I am currently #working..." : "Dear diary..."}
                 />
                 <div className="flex justify-between mt-1 items-center">
                    <button onClick={handleGenerateIdea} className="text-[10px] text-blue-600 hover:underline" disabled={aiGenerating}>
@@ -579,8 +640,8 @@ export default function App() {
 
           {/* FEED LIST */}
           <div className="space-y-0">
-             {posts.length === 0 && <div className="text-center text-gray-400 italic py-4">It's quiet here... post something!</div>}
-             {posts.map(post => (
+             {filteredPosts.length === 0 && <div className="text-center text-gray-400 italic py-4">It's quiet here... post something!</div>}
+             {filteredPosts.map(post => (
                 <div key={post.id} className="feed-item flex-col items-start">
                    <div className="flex gap-3 w-full">
                       <div className="w-[50px] flex-shrink-0">
@@ -602,7 +663,7 @@ export default function App() {
                               <span className="text-[#666]" dangerouslySetInnerHTML={{ __html: post.content.substring(0, 150) + '...' }} />
                             </span>
                           ) : (
-                            <span>{post.content}</span>
+                            <span>{renderContentWithTags(post.content)}</span>
                           )}
                           
                           <div className="mt-1 flex items-center gap-2 text-[11px] text-[#999]">
@@ -678,6 +739,16 @@ export default function App() {
           </div>
           
           <div className="bg-white border border-[#ccc] p-2 mb-4">
+             <h3 className="font-bold text-[#333] mb-2 border-b border-[#eee] pb-1">Search</h3>
+             <div className="mb-2">
+                <input 
+                  type="text" 
+                  placeholder="Search tags or posts..." 
+                  className="w-full text-xs" 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+             </div>
              <h3 className="font-bold text-[#333] mb-2 border-b border-[#eee] pb-1">Who to follow</h3>
              <div className="grid grid-cols-2 gap-2">
                 {users.filter(u => u.id !== currentUser.id).slice(0, 6).map(u => (
@@ -697,7 +768,8 @@ export default function App() {
   const renderProfile = () => {
     if (!currentUser) return null;
     const isOwnProfile = activeProfile.id === currentUser.id;
-    const userPosts = posts.filter(p => p.authorId === activeProfile.id);
+    // Filter profile posts as well if query is active
+    const userPosts = getFilteredPosts().filter(p => p.authorId === activeProfile.id);
     const topFriends = users.filter(u => activeProfile.topFriends?.includes(u.id));
 
     // Apply user theme to inner content only
@@ -752,7 +824,7 @@ export default function App() {
              </div>
 
              <div className="mb-3">
-                <MusicPlayer />
+                <MusicPlayer url={activeProfile.theme.musicUrl} />
              </div>
              
              {isOwnProfile && (
@@ -772,6 +844,28 @@ export default function App() {
                               const updatedUser = { 
                                   ...currentUser, 
                                   theme: { ...currentUser.theme, backgroundUrl: e.target.value } 
+                              };
+                              // Optimistic update
+                              setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
+                              api.updateUser(updatedUser, useServer);
+                          }
+                      }}
+                    />
+                 </div>
+                 
+                 {/* Music URL Input */}
+                 <div className="mb-2">
+                    <label className="block text-[10px] text-gray-500 mb-1">Profile Song (YouTube URL)</label>
+                    <input 
+                      type="text" 
+                      placeholder="youtube.com/watch?v=..." 
+                      className="w-full text-[10px] mb-1 px-1"
+                      defaultValue={currentUser.theme.musicUrl || ''}
+                      onBlur={(e) => {
+                          if (e.target.value !== currentUser.theme.musicUrl) {
+                              const updatedUser = { 
+                                  ...currentUser, 
+                                  theme: { ...currentUser.theme, musicUrl: e.target.value } 
                               };
                               // Optimistic update
                               setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
@@ -812,7 +906,10 @@ export default function App() {
              
              {/* Feed */}
              <div className="bg-white border border-[#ccc] p-3 rounded-sm">
-                <h3 className="font-bold text-gray-700 mb-3 text-sm">Latest Updates</h3>
+                <h3 className="font-bold text-gray-700 mb-3 text-sm flex justify-between">
+                   <span>Latest Updates</span>
+                   {searchQuery && <span className="text-xs font-normal">Filtering: {searchQuery}</span>}
+                </h3>
                 <div className="space-y-4">
                   {userPosts.length === 0 && <div className="text-gray-400 italic">No updates yet.</div>}
                   {userPosts.map(post => (
@@ -824,7 +921,13 @@ export default function App() {
                                   <span className="text-[10px] text-gray-400">{post.timestamp}</span>
                                </div>
                                
-                               <div className="mt-1 mb-2" dangerouslySetInnerHTML={{ __html: post.content }} />
+                               <div className="mt-1 mb-2">
+                                 {post.type === 'blog' ? (
+                                    <span dangerouslySetInnerHTML={{ __html: post.content }} />
+                                 ) : (
+                                    renderContentWithTags(post.content)
+                                 )}
+                               </div>
                                
                                <div className="text-[10px] space-x-2 text-gray-500">
                                   <span>{post.likes.length} Likes</span>
