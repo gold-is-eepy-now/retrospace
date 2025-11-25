@@ -74,6 +74,13 @@ export default function App() {
   const [aiGenerating, setAiGenerating] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   
+  // Message UI State
+  const [messageBoxView, setMessageBoxView] = useState<'inbox'|'sent'>('inbox');
+  const [isComposing, setIsComposing] = useState(false);
+  const [composeReceiverId, setComposeReceiverId] = useState<string | null>(null);
+  const [composeSubject, setComposeSubject] = useState('');
+  const [composeBody, setComposeBody] = useState('');
+
   // Interaction State
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -265,7 +272,10 @@ export default function App() {
         isAdmin: false, 
         followers: [],
         following: [],
-        blockedUsers: []
+        blockedUsers: [],
+        age: '??',
+        gender: 'Unknown',
+        location: 'Earth'
     };
 
     if (latestUsers.length === 0 || signupUsername.toLowerCase() === 'admin') {
@@ -451,6 +461,13 @@ export default function App() {
   const handleBanUser = async (userId: string, durationMinutes: number) => {
     const userToBan = users.find(u => u.id === userId);
     if (!userToBan) return;
+    
+    // SECURITY CHECK: Cannot ban admin
+    if (userToBan.isAdmin) {
+        alert("Nice try! You cannot ban an Admin.");
+        return;
+    }
+
     const until = durationMinutes === -1 ? null : Date.now() + (durationMinutes * 60000); 
     const updatedUser = { ...userToBan, isBanned: true, bannedUntil: until };
     await api.updateUser(updatedUser, useServer);
@@ -489,19 +506,33 @@ export default function App() {
     await reloadData();
   };
 
-  const handleSendMessage = async (receiverId: string, content: string) => {
-      if(!currentUser) return;
+  const handleSendMessage = async () => {
+      if(!currentUser || !composeReceiverId || !composeBody.trim()) return;
+      
       const newMsg: Message = { 
           id: `m-${Date.now()}`, 
           senderId: currentUser.id, 
-          receiverId, 
-          content, 
+          receiverId: composeReceiverId, 
+          subject: composeSubject || 'No Subject',
+          content: composeBody, 
           timestamp: 'Just now', 
           createdAt: Date.now(), 
           read: false 
       };
       await api.createMessage(newMsg, useServer);
       await reloadData();
+      
+      // Close Modal & Reset
+      setIsComposing(false);
+      setComposeBody('');
+      setComposeSubject('');
+      setComposeReceiverId(null);
+      alert("Message Sent!");
+  };
+
+  const openCompose = (receiverId: string | null = null) => {
+      setComposeReceiverId(receiverId);
+      setIsComposing(true);
   };
 
   const navigateToProfile = (userId: string) => {
@@ -874,10 +905,7 @@ export default function App() {
                         <button onClick={() => handleFollow(activeProfile.id)} className="btn-retro flex-1">
                             {currentUser.following.includes(activeProfile.id) ? 'Unfollow' : 'Follow'}
                         </button>
-                        <button onClick={() => {
-                            const msg = prompt("Quick Message:");
-                            if (msg && msg.trim()) handleSendMessage(activeProfile.id, msg);
-                        }} className="btn-retro flex-1">Msg</button>
+                        <button onClick={() => openCompose(activeProfile.id)} className="btn-retro flex-1">Msg</button>
                       </div>
                       <button onClick={() => handleBlockUser(activeProfile.id)} className="btn-retro w-full text-red-700">
                          {currentUser.blockedUsers?.includes(activeProfile.id) ? 'Unblock User' : 'Block User'}
@@ -886,7 +914,7 @@ export default function App() {
                    )}
                  </div>
 
-                 <div className="text-left text-xs space-y-1 text-gray-600 border-t border-gray-200 pt-2">
+                 <div className="text-left text-xs space-y-1 text-gray-600 border-t border-gray-200 pt-2 pb-2">
                     <div><b>Age:</b> {activeProfile.age || '??'}</div>
                     <div><b>Gender:</b> {activeProfile.gender || 'Unknown'}</div>
                     <div><b>Location:</b> {activeProfile.location || 'Earth'}</div>
@@ -1106,6 +1134,53 @@ export default function App() {
                 </div>
             </div>
         )}
+        
+        {/* COMPOSE MESSAGE MODAL */}
+        {isComposing && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white border-2 border-[#2276BB] shadow-lg w-[400px]">
+                    <div className="bg-[#2276BB] text-white font-bold p-2 flex justify-between">
+                        <span>New Message</span>
+                        <button onClick={() => setIsComposing(false)}>X</button>
+                    </div>
+                    <div className="p-4 bg-gray-50">
+                         <div className="mb-2">
+                            <label className="block text-[10px] text-gray-500 mb-1">To:</label>
+                            <select 
+                                className="w-full text-xs border border-gray-400 p-1"
+                                value={composeReceiverId || ''}
+                                onChange={e => setComposeReceiverId(e.target.value)}
+                            >
+                                <option value="">Select Friend...</option>
+                                {users.filter(u => u.id !== currentUser.id && !currentUser.blockedUsers.includes(u.id)).map(u => (
+                                    <option key={u.id} value={u.id}>{u.username}</option>
+                                ))}
+                            </select>
+                         </div>
+                         <div className="mb-2">
+                            <label className="block text-[10px] text-gray-500 mb-1">Subject:</label>
+                            <input 
+                                className="w-full text-xs border border-gray-400 p-1"
+                                value={composeSubject}
+                                onChange={e => setComposeSubject(e.target.value)}
+                            />
+                         </div>
+                         <div className="mb-3">
+                            <label className="block text-[10px] text-gray-500 mb-1">Message:</label>
+                            <textarea 
+                                className="w-full text-xs border border-gray-400 p-1 h-24"
+                                value={composeBody}
+                                onChange={e => setComposeBody(e.target.value)}
+                            />
+                         </div>
+                         <div className="flex justify-end gap-2">
+                             <button className="btn-retro px-3" onClick={() => setIsComposing(false)}>Cancel</button>
+                             <button className="btn-retro px-3 text-green-700 font-bold" onClick={handleSendMessage}>Send</button>
+                         </div>
+                    </div>
+                </div>
+            </div>
+        )}
       </div>
     );
   };
@@ -1113,11 +1188,12 @@ export default function App() {
   // 5. MESSAGES VIEW
   const renderMessages = () => {
     if (!currentUser) return null;
-    // Filter blocked messages
-    const inbox = messages.filter(m => 
-        m.receiverId === currentUser.id && 
-        !currentUser.blockedUsers?.includes(m.senderId)
-    );
+    
+    // Switch between Inbox and Sent
+    const displayedMessages = messageBoxView === 'inbox' 
+       ? messages.filter(m => m.receiverId === currentUser.id && !currentUser.blockedUsers?.includes(m.senderId))
+       : messages.filter(m => m.senderId === currentUser.id);
+
     return (
       <div className="max-w-[760px] mx-auto p-2 font-sans text-[13px] text-[#333]">
          <Header user={currentUser} onlineCount={users.filter(u => u.isOnline).length} setView={setView} unreadCount={unreadCount} handleLogout={handleLogout} serverStatus={useServer} />
@@ -1126,15 +1202,28 @@ export default function App() {
              <div className="w-[150px] flex-shrink-0">
                 <div className="bg-[#E8FDC1] border border-[#a3dba8] p-2 font-bold mb-2">RetroMail</div>
                 <div className="bg-white border border-[#ccc] text-xs">
-                   <div className="p-2 bg-[#f0f0f0] font-bold border-b border-[#eee]">Inbox ({unreadCount})</div>
-                   <div className="p-2 hover:bg-[#f9f9f9] cursor-pointer">Sent Items</div>
-                   <div className="p-2 hover:bg-[#f9f9f9] cursor-pointer">Trash</div>
+                   <div 
+                     className={`p-2 cursor-pointer border-b border-[#eee] ${messageBoxView === 'inbox' ? 'bg-[#f0f0f0] font-bold' : 'hover:bg-[#f9f9f9]'}`}
+                     onClick={() => setMessageBoxView('inbox')}
+                   >
+                     Inbox ({unreadCount})
+                   </div>
+                   <div 
+                     className={`p-2 cursor-pointer border-b border-[#eee] ${messageBoxView === 'sent' ? 'bg-[#f0f0f0] font-bold' : 'hover:bg-[#f9f9f9]'}`}
+                     onClick={() => setMessageBoxView('sent')}
+                   >
+                     Sent Items
+                   </div>
+                   <div className="p-2 text-gray-400 cursor-not-allowed">Trash</div>
+                   <div className="mt-4 p-2">
+                      <button className="btn-retro w-full text-green-700 font-bold" onClick={() => openCompose()}>+ Compose</button>
+                   </div>
                 </div>
              </div>
              
              <div className="flex-1 bg-white border border-[#ccc] p-3">
                 <div className="flex justify-between items-center mb-3 bg-[#eee] p-1 border border-[#ddd]">
-                   <span className="font-bold">Inbox</span>
+                   <span className="font-bold capitalize">{messageBoxView}</span>
                    <button className="btn-retro">Delete Marked</button>
                 </div>
                 
@@ -1142,25 +1231,30 @@ export default function App() {
                    <thead>
                       <tr className="text-left text-gray-500 border-b border-gray-300">
                          <th className="p-1 w-6"></th>
-                         <th className="p-1">From</th>
+                         <th className="p-1">{messageBoxView === 'inbox' ? 'From' : 'To'}</th>
                          <th className="p-1">Subject</th>
                          <th className="p-1 w-20">Date</th>
                       </tr>
                    </thead>
                    <tbody>
-                      {inbox.map(msg => (
-                         <tr key={msg.id} className={`border-b border-gray-100 hover:bg-[#f9f9f9] ${!msg.read ? 'font-bold' : 'text-gray-600'}`}>
-                            <td className="p-1"><input type="checkbox" /></td>
-                            <td className="p-1 cursor-pointer" onClick={() => navigateToProfile(msg.senderId)}>
-                               {users.find(u => u.id === msg.senderId)?.username || 'Unknown'}
-                            </td>
-                            <td className="p-1">
-                               <span className="cursor-pointer hover:text-blue-600">{msg.content.substring(0, 50)}...</span>
-                            </td>
-                            <td className="p-1 text-[10px]">{msg.timestamp}</td>
-                         </tr>
-                      ))}
-                      {inbox.length === 0 && <tr><td colSpan={4} className="p-4 text-center italic text-gray-400">No messages found.</td></tr>}
+                      {displayedMessages.slice().reverse().map(msg => {
+                         const otherUserId = messageBoxView === 'inbox' ? msg.senderId : msg.receiverId;
+                         const otherUser = users.find(u => u.id === otherUserId);
+                         return (
+                             <tr key={msg.id} className={`border-b border-gray-100 hover:bg-[#f9f9f9] ${(!msg.read && messageBoxView === 'inbox') ? 'font-bold' : 'text-gray-600'}`}>
+                                <td className="p-1"><input type="checkbox" /></td>
+                                <td className="p-1 cursor-pointer" onClick={() => navigateToProfile(otherUserId)}>
+                                   {otherUser?.username || 'Unknown'}
+                                </td>
+                                <td className="p-1">
+                                   <div className="text-black">{msg.subject || '(No Subject)'}</div>
+                                   <div className="text-[10px] text-gray-500 truncate w-64">{msg.content}</div>
+                                </td>
+                                <td className="p-1 text-[10px]">{msg.timestamp}</td>
+                             </tr>
+                         );
+                      })}
+                      {displayedMessages.length === 0 && <tr><td colSpan={4} className="p-4 text-center italic text-gray-400">No messages found.</td></tr>}
                    </tbody>
                 </table>
              </div>
@@ -1199,7 +1293,9 @@ export default function App() {
                                {u.isBanned ? <span className="text-red-600 font-bold text-[10px]">BANNED</span> : <span className="text-green-600 text-[10px]">Active</span>}
                             </td>
                             <td>
-                               {u.isBanned ? (
+                               {u.isAdmin ? (
+                                   <span className="text-gray-400 italic">Protected</span>
+                               ) : u.isBanned ? (
                                   <button onClick={() => handleUnbanUser(u.id)} className="btn-retro">Unban</button>
                                ) : (
                                   <div className="flex gap-1">

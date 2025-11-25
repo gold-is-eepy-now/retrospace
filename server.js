@@ -9,6 +9,10 @@ const PORT = 3001;
 app.use(cors());
 app.use(express.json());
 
+// --- SERVE STATIC FRONTEND ---
+// This allows the server to host the React app directly
+app.use(express.static(__dirname));
+
 // Database File
 const DB_FILE = path.join(__dirname, 'database.json');
 
@@ -36,7 +40,7 @@ const writeDb = (data) => {
   fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 };
 
-// --- ROUTES ---
+// --- API ROUTES ---
 
 // Health Check
 app.get('/api/health', (req, res) => {
@@ -118,6 +122,21 @@ app.post('/api/messages', (req, res) => {
   db.messages.push(msg);
   writeDb(db);
   res.json(msg);
+});
+
+// --- CLIENT ROUTING (SPA) ---
+// If the request is not an API call, serve index.html
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: 'API Endpoint not found' });
+  }
+  
+  const indexPath = path.join(__dirname, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.send('Retrospace Backend Running. Frontend assets (index.html) not found.');
+  }
 });
 
 // Start Server

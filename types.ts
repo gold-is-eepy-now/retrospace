@@ -39,6 +39,7 @@ export interface Message {
   timestamp: string; // Display string
   createdAt: number; // Sorting
   read: boolean;
+  subject?: string;
 }
 
 export interface Comment {
