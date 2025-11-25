@@ -26,6 +26,9 @@ export interface User {
   blockedUsers: string[]; // New: Array of blocked User IDs
   followers: string[]; // User IDs
   following: string[]; // User IDs
+  age?: string;
+  gender?: string;
+  location?: string;
 }
 
 export interface Message {

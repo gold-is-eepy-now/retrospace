@@ -887,11 +887,20 @@ export default function App() {
                  </div>
 
                  <div className="text-left text-xs space-y-1 text-gray-600 border-t border-gray-200 pt-2">
-                    <div><b>Age:</b> 24</div>
-                    <div><b>Gender:</b> Unknown</div>
-                    <div><b>Location:</b> Earth</div>
-                    <div className="mt-2"><b>{activeProfile.followers.length}</b> Followers</div>
-                    <div><b>{activeProfile.following.length}</b> Following</div>
+                    <div><b>Age:</b> {activeProfile.age || '??'}</div>
+                    <div><b>Gender:</b> {activeProfile.gender || 'Unknown'}</div>
+                    <div><b>Location:</b> {activeProfile.location || 'Earth'}</div>
+                 </div>
+                 
+                 <div className="flex justify-between text-[10px] font-bold text-center border-t border-gray-200 pt-2">
+                    <div className="flex-1 border-r border-gray-200 cursor-help" title="People watching this profile">
+                        <div className="text-blue-600 text-lg leading-none">{activeProfile.followers.length}</div>
+                        <div className="text-gray-500">Followers</div>
+                    </div>
+                    <div className="flex-1 cursor-help" title="People this profile watches">
+                        <div className="text-blue-600 text-lg leading-none">{activeProfile.following.length}</div>
+                        <div className="text-gray-500">Following</div>
+                    </div>
                  </div>
              </div>
 
@@ -1007,6 +1016,20 @@ export default function App() {
                                 <label className="block text-[10px] text-gray-500 mb-1">Tagline</label>
                                 <input type="text" className="w-full text-xs" defaultValue={currentUser.tagline} onBlur={e => updateUserProfile('tagline', e.target.value)} />
                              </div>
+                             <div className="grid grid-cols-3 gap-2 mb-2">
+                                 <div>
+                                    <label className="block text-[10px] text-gray-500 mb-1">Age</label>
+                                    <input type="text" className="w-full text-xs" defaultValue={currentUser.age || ''} onBlur={e => updateUserProfile('age', e.target.value)} placeholder="??" />
+                                 </div>
+                                 <div>
+                                    <label className="block text-[10px] text-gray-500 mb-1">Gender</label>
+                                    <input type="text" className="w-full text-xs" defaultValue={currentUser.gender || ''} onBlur={e => updateUserProfile('gender', e.target.value)} placeholder="Unknown" />
+                                 </div>
+                                 <div>
+                                    <label className="block text-[10px] text-gray-500 mb-1">Location</label>
+                                    <input type="text" className="w-full text-xs" defaultValue={currentUser.location || ''} onBlur={e => updateUserProfile('location', e.target.value)} placeholder="Earth" />
+                                 </div>
+                             </div>
                              <div className="mb-2">
                                 <label className="block text-[10px] text-gray-500 mb-1">Avatar URL</label>
                                 <input type="text" className="w-full text-xs" defaultValue={currentUser.avatarUrl} onBlur={e => updateUserProfile('avatarUrl', e.target.value)} />
@@ -1026,8 +1049,8 @@ export default function App() {
                                 <input type="text" className="w-full text-xs" defaultValue={currentUser.theme.backgroundUrl || ''} onBlur={(e) => updateProfileThemeField('backgroundUrl', e.target.value)} />
                              </div>
                              <div className="mb-2">
-                                <label className="block text-[10px] text-gray-500 mb-1">Profile Song (YouTube)</label>
-                                <input type="text" className="w-full text-xs" defaultValue={currentUser.theme.musicUrl || ''} onBlur={(e) => updateProfileThemeField('musicUrl', e.target.value)} />
+                                <label className="block text-[10px] text-gray-500 mb-1">Profile Song (YouTube Link or Embed Code)</label>
+                                <input type="text" className="w-full text-xs" defaultValue={currentUser.theme.musicUrl || ''} onBlur={(e) => updateProfileThemeField('musicUrl', e.target.value)} placeholder="https://youtu.be/... or <iframe...>" />
                              </div>
                              
                              <div className="grid grid-cols-2 gap-2 mb-2">
