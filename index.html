@@ -20,12 +20,54 @@
         padding: 0;
       }
 
-      /* Logo Font simulation */
+      /* SKYPE-STYLE LOGO */
       .retro-logo {
         font-family: "Arial Rounded MT Bold", "Helvetica Rounded", Arial, sans-serif;
         color: white;
-        text-shadow: 2px 2px 0px #5ebbd7;
-        letter-spacing: -2px;
+        font-size: 40px; /* Adjusted size */
+        letter-spacing: -1px;
+        position: relative;
+        display: inline-block;
+        z-index: 0;
+        margin-bottom: 5px;
+        padding: 0 10px; /* Spacing for the text */
+      }
+
+      /* Ensure text sits on top */
+      .retro-logo span {
+        position: relative;
+        z-index: 2;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      }
+
+      /* Main Pill Background */
+      .retro-logo::before {
+        content: "";
+        position: absolute;
+        inset: 0; /* Covers the h1 area */
+        top: 5px; bottom: 5px; left: -5px; right: -5px; /* Adjust pill size relative to text */
+        background: #00aff0; /* Skype Blue */
+        background: radial-gradient(circle at 30% 30%, #4cdbfd, #00aff0);
+        border-radius: 50px;
+        z-index: -1;
+        box-shadow: 1px 2px 4px rgba(0,0,0,0.2);
+      }
+
+      /* Cloud Bumps */
+      .retro-logo::after {
+        content: "";
+        position: absolute;
+        background: #00aff0;
+        background: radial-gradient(circle at 30% 30%, #4cdbfd, #00aff0);
+        border-radius: 50%;
+        z-index: -1;
+        
+        /* Bump 1 */
+        width: 40px; height: 40px;
+        top: -8px; left: 10px;
+        
+        /* Bump 2 via box-shadow (flat color fallback for shape) */
+        box-shadow: 60px 5px 0 -5px #00aff0; 
       }
 
       /* Links */
@@ -165,5 +207,6 @@
 </head>
   <body>
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
