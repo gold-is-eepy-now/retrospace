@@ -11,6 +11,7 @@ app.use(express.json());
 
 // --- SERVE STATIC FRONTEND ---
 // This allows the server to host the React app directly
+// It serves index.html, index.tsx, App.tsx, etc.
 app.use(express.static(__dirname));
 
 // Database File
@@ -126,6 +127,7 @@ app.post('/api/messages', (req, res) => {
 
 // --- CLIENT ROUTING (SPA) ---
 // If the request is not an API call, serve index.html
+// This is crucial for React Router or internal view logic to work on refresh
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ error: 'API Endpoint not found' });
@@ -137,6 +139,12 @@ app.get('*', (req, res) => {
   } else {
     res.send('Retrospace Backend Running. Frontend assets (index.html) not found.');
   }
+});
+
+// Start Server
+app.listen(PORT, () => {
+  console.log(`Retrospace Server running at http://localhost:${PORT}`);
+  console.log(`Data saved to ${DB_FILE}`);
 });
 
 // Start Server
