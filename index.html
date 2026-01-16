@@ -24,36 +24,33 @@
       .retro-logo {
         font-family: "Arial Rounded MT Bold", "Helvetica Rounded", Arial, sans-serif;
         color: white;
-        font-size: 40px; /* Adjusted size */
+        font-size: 40px;
         letter-spacing: -1px;
         position: relative;
         display: inline-block;
         z-index: 0;
         margin-bottom: 5px;
-        padding: 0 10px; /* Spacing for the text */
+        padding: 0 10px;
       }
 
-      /* Ensure text sits on top */
       .retro-logo span {
         position: relative;
         z-index: 2;
         text-shadow: 0 1px 2px rgba(0,0,0,0.1);
       }
 
-      /* Main Pill Background */
       .retro-logo::before {
         content: "";
         position: absolute;
-        inset: 0; /* Covers the h1 area */
-        top: 5px; bottom: 5px; left: -5px; right: -5px; /* Adjust pill size relative to text */
-        background: #00aff0; /* Skype Blue */
+        inset: 0;
+        top: 5px; bottom: 5px; left: -5px; right: -5px;
+        background: #00aff0;
         background: radial-gradient(circle at 30% 30%, #4cdbfd, #00aff0);
         border-radius: 50px;
         z-index: -1;
         box-shadow: 1px 2px 4px rgba(0,0,0,0.2);
       }
 
-      /* Cloud Bumps */
       .retro-logo::after {
         content: "";
         position: absolute;
@@ -61,12 +58,8 @@
         background: radial-gradient(circle at 30% 30%, #4cdbfd, #00aff0);
         border-radius: 50%;
         z-index: -1;
-        
-        /* Bump 1 */
         width: 40px; height: 40px;
         top: -8px; left: 10px;
-        
-        /* Bump 2 via box-shadow (flat color fallback for shape) */
         box-shadow: 60px 5px 0 -5px #00aff0; 
       }
 
@@ -74,7 +67,6 @@
       a { color: #2276BB; text-decoration: none; cursor: pointer; }
       a:hover { text-decoration: underline; color: #2276BB; }
       
-      /* Sidebar Green Box */
       .sidebar-box {
         background-color: #E8FDC1;
         border: 1px solid #a3dba8;
@@ -91,21 +83,6 @@
         gap: 5px;
       }
 
-      /* Yellow Highlights */
-      .highlight-yellow {
-        background-color: #ffff00;
-        padding: 0 2px;
-        font-weight: bold;
-      }
-
-      /* Form Elements */
-      input[type="text"], input[type="password"], textarea, select {
-        border: 1px solid #aaa;
-        padding: 4px;
-        font-size: 13px;
-        font-family: Arial, sans-serif;
-      }
-      
       .btn-retro {
         background: #f0f0f0;
         border: 1px solid #999;
@@ -119,79 +96,35 @@
       .btn-retro:active {
         background-image: linear-gradient(to bottom, #ddd, #fff);
       }
-      .btn-retro:hover {
-        border-color: #666;
-      }
       
-      /* Specific Login Button */
-      .btn-login {
-        font-size: 13px;
-        font-weight: bold;
-        padding: 2px 10px;
-        cursor: pointer;
-        background: #eee;
-        border: 1px solid #999;
-        border-radius: 2px;
-      }
-
-      /* Feed Item styles */
       .feed-item {
         border-bottom: 1px solid #eee;
         padding: 10px 0;
         display: flex;
         gap: 10px;
       }
-      .feed-timestamp {
-        font-size: 11px;
-        color: #999;
+
+      /* Notification Badge Pulse */
+      .badge-pulse {
+        animation: pulse 1.5s infinite;
       }
-      .feed-source {
-        font-size: 11px;
-        color: #999;
-      }
-      .feed-content {
-        line-height: 1.4;
+      @keyframes pulse {
+        0% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.2); opacity: 0.8; }
+        100% { transform: scale(1); opacity: 1; }
       }
 
-      /* MySpace Specific Overrides for Profile View */
-      .myspace-body {
-        background-color: #e5e5e5;
-        background-image: url('https://www.transparenttextures.com/patterns/notebook.png');
-      }
-      
-      .cursor-retro {
-        cursor: url('https://cur.cursors-4u.net/cursors/cur-2/cur116.cur'), auto;
-      }
-
-      /* Admin & Messages Tables */
-      .retro-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 11px;
+      .notification-tray {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        width: 200px;
         background: white;
-      }
-      .retro-table th {
-        background: #eee;
         border: 1px solid #ccc;
-        padding: 4px;
-        text-align: left;
-      }
-      .retro-table td {
-        border: 1px solid #ccc;
-        padding: 4px;
-      }
-      .retro-table tr:hover {
-        background-color: #f9f9f9;
-      }
-      
-      /* Action Links */
-      .action-link {
-        color: #888;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        z-index: 100;
+        padding: 5px;
         font-size: 11px;
-        margin-right: 5px;
-      }
-      .action-link:hover {
-        color: #d00;
       }
     </style>
   <script type="importmap">
