@@ -1,85 +1,44 @@
-import { GoogleGenAI } from "@google/genai";
+const RETRO_STATUS_POOL = [
+  'brb crying to my chemical romance T_T',
+  'mall food court drama again lol',
+  'rawr means i love you in dinosaur xD',
+  'coding profile css at 2am no regrets',
+  'currently away: mixtape + daydreaming',
+];
 
-const apiKey = typeof process !== 'undefined' ? process.env.API_KEY || '' : '';
-const ai = new GoogleGenAI({ apiKey });
+const RETRO_COMMENT_POOL = [
+  'omg iconic post!!',
+  'this is sooo 2006 i love it',
+  'rawr xD never change',
+  'main character energy tbh',
+  'stoppp this is too good',
+];
+
+const BLOG_INTROS = [
+  'so today felt like a whole movie soundtrack',
+  'okay i know nobody asked but i need to vent',
+  'not to be dramatic but everything is glitter and chaos',
+  'if life had a status song right now it would be loud',
+];
+
+const pick = (items: string[]) => items[Math.floor(Math.random() * items.length)];
 
 export const generateRetroStatus = async (): Promise<string> => {
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: "Write a very short, random, angsty or random rawr xD style status update typical of a teenager on MySpace/Twitter in 2006. Use old internet slang (lol, rofl, xD, T_T). Max 15 words. Lowercase heavily.",
-      config: {
-        maxOutputTokens: 50,
-        temperature: 0.9,
-      }
-    });
-    return response.text.replace(/^["']|["']$/g, '').trim();
-  } catch (error) {
-    console.error("Gemini error:", error);
-    return "is currently offline... T_T";
-  }
+  return pick(RETRO_STATUS_POOL);
 };
 
-export const generateBlogPost = async (topic: string): Promise<{title: string, content: string}> => {
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Write a MySpace era blog post about "${topic || 'my life'}". 
-      Title should be dramatic/emo song lyrics. 
-      Content should be about 100 words, rambling, emotional, using 2006 slang, html line breaks, and emoticons.`,
-      config: {
-        maxOutputTokens: 300,
-        temperature: 1.0,
-        responseMimeType: "application/json"
-      }
-    });
-    
-    // Fallback parsing if JSON fails (though 2.5 flash is good at it)
-    try {
-        const json = JSON.parse(response.text);
-        return {
-            title: json.title || "Untitled...",
-            content: json.content || response.text
-        };
-    } catch {
-        return {
-            title: "Lyrics to my life...",
-            content: response.text
-        };
-    }
+export const generateBlogPost = async (topic: string): Promise<{ title: string; content: string }> => {
+  const safeTopic = (topic || 'my life').trim();
+  return {
+    title: `${safeTopic} // lyrics to my life`,
+    content: `${pick(BLOG_INTROS)}...<br><br>been thinking about ${safeTopic} nonstop lately. i swear every song on my playlist gets it. anyway i'm trying to keep it together, customize my page, and pretend i'm totally fine lol. if you're reading this, leave a comment so i know i'm not yelling into the void. <3`,
+  };
+};
 
-  } catch (error) {
-    console.error("Gemini error:", error);
-    return { title: "Error...", content: "Could not load blog. Ugh." };
-  }
-}
-
-export const generateAIComment = async (postContent: string): Promise<string> => {
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Reply to this social media post as a supportive but chaotic 2000s friend. Post: "${postContent}". Keep it under 10 words. Use slang like 'omg', 'cool', 'h4x0r'.`,
-      config: {
-        maxOutputTokens: 30,
-        temperature: 0.8,
-      }
-    });
-    return response.text.replace(/^["']|["']$/g, '').trim();
-  } catch (error) {
-    console.error("Gemini error:", error);
-    return "omg cool post!!";
-  }
+export const generateAIComment = async (_postContent: string): Promise<string> => {
+  return pick(RETRO_COMMENT_POOL);
 };
 
 export const generateProfileBio = async (): Promise<string> => {
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: "Generate a 'About Me' section for a MySpace profile in 2005. Include hobbies like listening to emo bands, coding HTML, and hanging out at the mall. Keep it raw, unstructured, and nostalgic. Max 50 words.",
-    });
-    return response.text;
-  } catch (error) {
-    console.error("Gemini error:", error);
-    return "Music is my life. Don't judge me. <3";
-  }
+  return "music is my life, html is my therapy, and the mall is my happy place <3";
 };
