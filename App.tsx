@@ -21,25 +21,57 @@ interface ActivityNotification {
   timestamp: number;
 }
 
+interface HeaderProps {
+  user: User | null;
+  onlineCount: number;
+  setView: (view: ViewState) => void;
+  unreadCount: number;
+  activityCount: number;
+  notifications: ActivityNotification[];
+  handleLogout: () => void;
+  serverStatus: boolean;
+  clearNotifications: () => void;
+}
+
+interface NavItem {
+  label: string;
+  view: ViewState;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { label: 'Home', view: ViewState.HOME },
+  { label: 'Profile', view: ViewState.PROFILE },
+];
+
 // --- COMMON COMPONENTS ---
 
-const Header: React.FC<{ 
-  user: User | null, 
-  onlineCount: number, 
-  setView: (v: ViewState) => void,
-  unreadCount: number,
-  activityCount: number,
-  notifications: ActivityNotification[],
-  handleLogout: () => void,
-  serverStatus: boolean,
-  clearNotifications: () => void
-}> = ({ user, onlineCount, setView, unreadCount, activityCount, notifications, handleLogout, serverStatus, clearNotifications }) => {
+const Header: React.FC<HeaderProps> = ({
+  user,
+  onlineCount,
+  setView,
+  unreadCount,
+  activityCount,
+  notifications,
+  handleLogout,
+  serverStatus,
+  clearNotifications,
+}) => {
   const [showTray, setShowTray] = useState(false);
+  const logoDestination = user ? ViewState.HOME : ViewState.LOGIN;
+
+  const toggleActivityTray = () => {
+    setShowTray((previousValue) => {
+      if (!previousValue) {
+        clearNotifications();
+      }
+      return !previousValue;
+    });
+  };
 
   return (
     <div className="flex justify-between items-end mb-6 mt-4 px-2 select-none relative">
       <div className="flex flex-col">
-          <h1 className="retro-logo cursor-pointer" onClick={() => user ? setView(ViewState.HOME) : setView(ViewState.LOGIN)}>
+          <h1 className="retro-logo cursor-pointer" onClick={() => setView(logoDestination)}>
             <span>retrospace</span>
           </h1>
           <span className={`text-[9px] font-bold ${serverStatus ? 'text-green-600' : 'text-red-500'}`}>
@@ -48,8 +80,11 @@ const Header: React.FC<{
       </div>
       {user && (
         <div className="text-[#666] text-xs pb-1 flex gap-3 items-center">
-            <a onClick={() => setView(ViewState.HOME)} className="font-bold hover:underline cursor-pointer text-[#2276BB]">Home</a>
-            <a onClick={() => setView(ViewState.PROFILE)} className="font-bold hover:underline cursor-pointer text-[#2276BB]">Profile</a>
+            {NAV_ITEMS.map(({ label, view }) => (
+              <a key={label} onClick={() => setView(view)} className="font-bold hover:underline cursor-pointer text-[#2276BB]">
+                {label}
+              </a>
+            ))}
             <a onClick={() => setView(ViewState.MESSAGES)} className="font-bold hover:underline cursor-pointer text-[#2276BB] relative">
               Mail {unreadCount > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] px-1 rounded-sm badge-pulse">{unreadCount}</span>}
             </a>
@@ -57,7 +92,7 @@ const Header: React.FC<{
             {/* Notification Bell */}
             <div className="relative">
               <button 
-                onClick={() => { setShowTray(!showTray); if(!showTray) clearNotifications(); }} 
+                onClick={toggleActivityTray}
                 className="font-bold hover:underline cursor-pointer text-[#2276BB] flex items-center gap-1"
               >
                 Activity {(activityCount > 0) && <span className="bg-red-500 text-white text-[9px] px-1 rounded-sm badge-pulse">{activityCount}</span>}
