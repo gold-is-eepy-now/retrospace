@@ -1,0 +1,5 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import React from 'react';
+export const TopFriends = ({ friends }) => {
+    return (_jsxs("div", { className: "mb-4", children: [_jsx("h3", { className: "font-bold text-gray-700 mb-2 text-xs uppercase tracking-wide", children: "Top 8 Friends" }), _jsx("div", { className: "grid grid-cols-4 gap-2", children: friends.map((friend) => (_jsxs("div", { className: "text-center", children: [_jsxs("div", { className: "relative group", children: [_jsx("img", { src: friend.avatarUrl, alt: friend.username, className: "w-full aspect-square object-cover border border-gray-300 p-0.5 hover:border-blue-400 cursor-pointer" }), friend.isOnline && (_jsx("div", { className: "absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border border-white rounded-full", title: "Online" }))] }), _jsx("a", { href: "#", className: "text-[10px] text-blue-600 hover:underline block truncate mt-1", children: friend.username })] }, friend.id))) }), _jsx("div", { className: "text-right mt-1", children: _jsx("a", { href: "#", className: "text-[10px] text-gray-400 hover:text-gray-600", children: "View All" }) })] }));
+};
