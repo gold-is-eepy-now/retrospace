@@ -52,6 +52,8 @@ export interface Comment {
 
 export type PostType = 'status' | 'blog';
 
+export type MediaType = 'image' | 'video';
+
 export interface Post {
   id: string;
   type: PostType;
@@ -64,6 +66,8 @@ export interface Post {
   timestamp: string;
   comments: Comment[];
   likes: string[]; // Array of User IDs who liked
+  mediaUrl?: string;
+  mediaType?: MediaType;
   tags?: string[];
   isEdited?: boolean; // New: Edited flag
 }

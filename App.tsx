@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Post, ViewState, Comment, PostType, UserTheme, Message } from './types';
+import { User, Post, ViewState, Comment, PostType, UserTheme, Message, MediaType } from './types';
 import { generateRetroStatus, generateAIComment, generateProfileBio, generateBlogPost } from './services/geminiService';
 import { api } from './services/api';
 import { MusicPlayer } from './components/MusicPlayer';
@@ -154,6 +154,7 @@ export default function App() {
   // UI State
   const [postMode, setPostMode] = useState<PostType>('status');
   const [newPostContent, setNewPostContent] = useState('');
+  const [newPostMediaUrl, setNewPostMediaUrl] = useState('');
   const [blogTitle, setBlogTitle] = useState('');
   const [blogCategory, setBlogCategory] = useState('Life');
   const [aiGenerating, setAiGenerating] = useState(false);
@@ -341,6 +342,31 @@ export default function App() {
     );
   };
 
+  const detectMediaType = (url: string): MediaType | null => {
+    const cleanUrl = url.toLowerCase().split('?')[0].split('#')[0];
+    if (/(\.mp4|\.webm|\.ogg|\.mov|\.m4v)$/.test(cleanUrl)) return 'video';
+    if (/(\.png|\.jpg|\.jpeg|\.gif|\.webp|\.avif|\.svg)$/.test(cleanUrl)) return 'image';
+    return null;
+  };
+
+  const renderPostMedia = (post: Post, compact = false) => {
+    if (!post.mediaUrl || !post.mediaType) return null;
+    const baseClass = compact
+      ? 'mt-2 max-h-[220px] w-auto rounded border border-gray-300'
+      : 'mt-2 max-h-[360px] w-auto rounded border border-gray-300';
+
+    if (post.mediaType === 'video') {
+      return (
+        <video className={baseClass} controls preload="metadata">
+          <source src={post.mediaUrl} />
+          Your browser does not support this video.
+        </video>
+      );
+    }
+
+    return <img src={post.mediaUrl} alt="post media" className={baseClass} loading="lazy" />;
+  };
+
   const getFilteredPosts = () => {
     let filtered = posts.filter(p => {
         if (!currentUser) return true;
@@ -449,6 +475,13 @@ export default function App() {
     if (!newPostContent.trim() || !currentUser) return;
 
     const tags = newPostContent.match(/#[a-zA-Z0-9_]+/g) || [];
+    const trimmedMediaUrl = newPostMediaUrl.trim();
+    const mediaType = trimmedMediaUrl ? detectMediaType(trimmedMediaUrl) : null;
+
+    if (trimmedMediaUrl && !mediaType) {
+      alert('Media URL must end with an image or video file extension.');
+      return;
+    }
 
     const newPost: Post = {
       id: `p-${Date.now()}`,
@@ -462,6 +495,8 @@ export default function App() {
       timestamp: 'less than 5 seconds ago',
       likes: [],
       comments: [],
+      mediaUrl: trimmedMediaUrl || undefined,
+      mediaType: mediaType || undefined,
       tags: tags as string[]
     };
 
@@ -469,6 +504,7 @@ export default function App() {
     await reloadData();
 
     setNewPostContent('');
+    setNewPostMediaUrl('');
     setBlogTitle('');
     
     if (Math.random() > 0.3 && users.length > 1) {
@@ -795,6 +831,12 @@ export default function App() {
                   </div>
                 )}
                 <textarea className="w-full h-16 resize-none" value={newPostContent} onChange={e => setNewPostContent(e.target.value)} placeholder={postMode === 'status' ? "I am currently #working..." : "Dear diary..."} />
+                <input
+                  className="w-full mt-1 text-xs"
+                  value={newPostMediaUrl}
+                  onChange={e => setNewPostMediaUrl(e.target.value)}
+                  placeholder="Optional media URL (.jpg, .png, .gif, .mp4, .webm...)"
+                />
                 <div className="flex justify-between mt-1 items-center">
                    <button onClick={handleGenerateIdea} className="text-[10px] text-blue-600 hover:underline" disabled={aiGenerating}>{aiGenerating ? "Generating..." : "Need an idea?"}</button>
                    <span className="text-[10px] text-gray-500">{140 - newPostContent.length} chars</span>
@@ -821,9 +863,9 @@ export default function App() {
                             </div>
                           ) : (
                              post.type === 'blog' ? (
-                                 <span className="italic">blogged: <a className="font-bold">"{post.title}"</a><br/><span className="text-[#666]" dangerouslySetInnerHTML={{ __html: post.content.substring(0, 150) + '...' }} /></span>
+                                 <span className="italic">blogged: <a className="font-bold">"{post.title}"</a><br/><span className="text-[#666]" dangerouslySetInnerHTML={{ __html: post.content.substring(0, 150) + '...' }} />{renderPostMedia(post, true)}</span>
                              ) : (
-                                 <span>{renderContentWithTags(post.content)}</span>
+                                 <span>{renderContentWithTags(post.content)}{renderPostMedia(post)}</span>
                              )
                           )}
                           <div className="mt-1 flex items-center gap-2 text-[11px] text-[#999]">
@@ -911,7 +953,7 @@ export default function App() {
                            <span className="font-bold">{post.title || 'Status Update'}</span>
                            <span className="text-[10px] text-gray-400">{post.timestamp}</span>
                         </div>
-                        <div className="mt-1 mb-2">{post.type === 'blog' ? <span dangerouslySetInnerHTML={{ __html: post.content }} /> : renderContentWithTags(post.content)}</div>
+                        <div className="mt-1 mb-2">{post.type === 'blog' ? <span dangerouslySetInnerHTML={{ __html: post.content }} /> : renderContentWithTags(post.content)}{renderPostMedia(post, true)}</div>
                     </div>
                   ))}
                 </div>
