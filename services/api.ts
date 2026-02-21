@@ -1,128 +1,180 @@
-import { User, Post, Message } from '../types';
+import { Message, Post, User } from '../types';
 
-// Use relative URL so it works on whatever port the server is running on
 const API_URL = '/api';
 
-const LS_KEYS = { USERS: 'retro_users', POSTS: 'retro_posts', MSGS: 'retro_msgs', SESS: 'retro_sess' };
+const LS_KEYS = {
+  USERS: 'retro_users',
+  POSTS: 'retro_posts',
+  MSGS: 'retro_msgs',
+  SESS: 'retro_sess',
+} as const;
+
+const jsonHeaders = { 'Content-Type': 'application/json' };
+
+const safeParseArray = <T>(value: string | null): T[] => {
+  if (!value) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const getLocalList = <T>(key: string): T[] => safeParseArray<T>(localStorage.getItem(key));
+
+const setLocalList = <T>(key: string, list: T[]) => {
+  localStorage.setItem(key, JSON.stringify(list));
+};
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, init);
+
+  if (!response.ok) {
+    const fallback = `Request failed with status ${response.status}`;
+    try {
+      const payload = await response.json();
+      throw new Error(payload.error || fallback);
+    } catch {
+      throw new Error(fallback);
+    }
+  }
+
+  return response.json();
+}
 
 export const api = {
   checkHealth: async (): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_URL}/health`);
-      return res.ok;
-    } catch (e) { return false; }
+      await requestJson<{ status: string }>('/health');
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   getUsers: async (useServer: boolean): Promise<User[]> => {
-    if (useServer) return (await fetch(`${API_URL}/users`)).json();
-    return JSON.parse(localStorage.getItem(LS_KEYS.USERS) || '[]');
+    if (useServer) return requestJson<User[]>('/users');
+    return getLocalList<User>(LS_KEYS.USERS);
   },
 
   createUser: async (user: User, useServer: boolean): Promise<User> => {
     if (useServer) {
-      const res = await fetch(`${API_URL}/users`, {
+      return requestJson<User>('/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(user)
+        headers: jsonHeaders,
+        body: JSON.stringify(user),
       });
-      return res.json();
     }
-    const users = JSON.parse(localStorage.getItem(LS_KEYS.USERS) || '[]');
+
+    const users = getLocalList<User>(LS_KEYS.USERS);
     users.push(user);
-    localStorage.setItem(LS_KEYS.USERS, JSON.stringify(users));
+    setLocalList(LS_KEYS.USERS, users);
     return user;
   },
 
   updateUser: async (user: User, useServer: boolean): Promise<User> => {
-      if (useServer) {
-          const res = await fetch(`${API_URL}/users/${user.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(user)
-          });
-          return res.json();
-      }
-      const users = JSON.parse(localStorage.getItem(LS_KEYS.USERS) || '[]');
-      const idx = users.findIndex((u: User) => u.id === user.id);
-      if (idx !== -1) {
-          users[idx] = user;
-          localStorage.setItem(LS_KEYS.USERS, JSON.stringify(users));
-      }
-      return user;
+    if (useServer) {
+      return requestJson<User>(`/users/${user.id}`, {
+        method: 'PUT',
+        headers: jsonHeaders,
+        body: JSON.stringify(user),
+      });
+    }
+
+    const users = getLocalList<User>(LS_KEYS.USERS);
+    const index = users.findIndex((candidate) => candidate.id === user.id);
+    if (index >= 0) {
+      users[index] = user;
+      setLocalList(LS_KEYS.USERS, users);
+    }
+
+    return user;
   },
 
   getPosts: async (useServer: boolean): Promise<Post[]> => {
-    if (useServer) return (await fetch(`${API_URL}/posts`)).json();
-    return JSON.parse(localStorage.getItem(LS_KEYS.POSTS) || '[]');
+    if (useServer) return requestJson<Post[]>('/posts');
+    return getLocalList<Post>(LS_KEYS.POSTS);
   },
 
   createPost: async (post: Post, useServer: boolean): Promise<Post> => {
     if (useServer) {
-      const res = await fetch(`${API_URL}/posts`, {
+      return requestJson<Post>('/posts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(post)
+        headers: jsonHeaders,
+        body: JSON.stringify(post),
       });
-      return res.json();
     }
-    const posts = JSON.parse(localStorage.getItem(LS_KEYS.POSTS) || '[]');
+
+    const posts = getLocalList<Post>(LS_KEYS.POSTS);
     posts.unshift(post);
-    localStorage.setItem(LS_KEYS.POSTS, JSON.stringify(posts));
+    setLocalList(LS_KEYS.POSTS, posts);
     return post;
   },
 
   updatePost: async (post: Post, useServer: boolean): Promise<Post> => {
-      if(useServer) {
-          const res = await fetch(`${API_URL}/posts/${post.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(post)
-          });
-          return res.json();
-      }
-      const posts = JSON.parse(localStorage.getItem(LS_KEYS.POSTS) || '[]');
-      const idx = posts.findIndex((p: Post) => p.id === post.id);
-      if (idx !== -1) {
-          posts[idx] = post;
-          localStorage.setItem(LS_KEYS.POSTS, JSON.stringify(posts));
-      }
-      return post;
+    if (useServer) {
+      return requestJson<Post>(`/posts/${post.id}`, {
+        method: 'PUT',
+        headers: jsonHeaders,
+        body: JSON.stringify(post),
+      });
+    }
+
+    const posts = getLocalList<Post>(LS_KEYS.POSTS);
+    const index = posts.findIndex((candidate) => candidate.id === post.id);
+    if (index >= 0) {
+      posts[index] = post;
+      setLocalList(LS_KEYS.POSTS, posts);
+    }
+
+    return post;
   },
 
   deletePost: async (postId: string, useServer: boolean): Promise<void> => {
-      if(useServer) {
-          await fetch(`${API_URL}/posts/${postId}`, { method: 'DELETE' });
-          return;
-      }
-      let posts = JSON.parse(localStorage.getItem(LS_KEYS.POSTS) || '[]');
-      posts = posts.filter((p: Post) => p.id !== postId);
-      localStorage.setItem(LS_KEYS.POSTS, JSON.stringify(posts));
+    if (useServer) {
+      await requestJson<{ success: boolean }>(`/posts/${postId}`, { method: 'DELETE' });
+      return;
+    }
+
+    const posts = getLocalList<Post>(LS_KEYS.POSTS).filter((post) => post.id !== postId);
+    setLocalList(LS_KEYS.POSTS, posts);
   },
 
   getMessages: async (useServer: boolean): Promise<Message[]> => {
-    if (useServer) return (await fetch(`${API_URL}/messages`)).json();
-    return JSON.parse(localStorage.getItem(LS_KEYS.MSGS) || '[]');
+    if (useServer) return requestJson<Message[]>('/messages');
+    return getLocalList<Message>(LS_KEYS.MSGS);
   },
 
-  createMessage: async (msg: Message, useServer: boolean): Promise<Message> => {
+  createMessage: async (message: Message, useServer: boolean): Promise<Message> => {
     if (useServer) {
-      const res = await fetch(`${API_URL}/messages`, {
+      return requestJson<Message>('/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(msg)
+        headers: jsonHeaders,
+        body: JSON.stringify(message),
       });
-      return res.json();
     }
-    const msgs = JSON.parse(localStorage.getItem(LS_KEYS.MSGS) || '[]');
-    msgs.push(msg);
-    localStorage.setItem(LS_KEYS.MSGS, JSON.stringify(msgs));
-    return msg;
+
+    const messages = getLocalList<Message>(LS_KEYS.MSGS);
+    messages.push(message);
+    setLocalList(LS_KEYS.MSGS, messages);
+    return message;
   },
 
   getSession: () => localStorage.getItem(LS_KEYS.SESS),
-  setSession: (userId: string | null) => userId ? localStorage.setItem(LS_KEYS.SESS, userId) : localStorage.removeItem(LS_KEYS.SESS),
+
+  setSession: (userId: string | null) => {
+    if (userId) {
+      localStorage.setItem(LS_KEYS.SESS, userId);
+      return;
+    }
+
+    localStorage.removeItem(LS_KEYS.SESS);
+  },
+
   clearLocal: () => {
-     localStorage.clear();
-     window.location.reload();
-  }
+    localStorage.clear();
+    window.location.reload();
+  },
 };

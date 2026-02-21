@@ -1,113 +1,209 @@
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
+const fs = require('fs/promises');
 const path = require('path');
+
 const app = express();
-
-// Use dynamic port for environment compatibility
 const PORT = process.env.PORT || 3001;
+const ROOT_DIR = __dirname;
+const DB_FILE = path.join(ROOT_DIR, 'database.json');
 
-// Middleware
+const DEFAULT_DB = Object.freeze({
+  users: [],
+  posts: [],
+  messages: [],
+});
+
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+app.use(express.static(ROOT_DIR));
 
-// --- SERVE STATIC FRONTEND ---
-app.use(express.static(__dirname));
+const cloneDefaultDb = () => ({
+  users: [],
+  posts: [],
+  messages: [],
+});
 
-// Database File
-const DB_FILE = path.join(__dirname, 'database.json');
+const normalizeDb = (raw) => ({
+  users: Array.isArray(raw?.users) ? raw.users : [],
+  posts: Array.isArray(raw?.posts) ? raw.posts : [],
+  messages: Array.isArray(raw?.messages) ? raw.messages : [],
+});
 
-// Initialize DB if not exists
-if (!fs.existsSync(DB_FILE)) {
-  const initialData = {
-    users: [],
-    posts: [],
-    messages: []
-  };
-  fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
+async function ensureDbFile() {
+  try {
+    await fs.access(DB_FILE);
+  } catch {
+    await fs.writeFile(DB_FILE, JSON.stringify(DEFAULT_DB, null, 2), 'utf8');
+  }
 }
 
-// Helper: Read DB
-const readDb = () => {
+async function readDb() {
   try {
-    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  } catch (err) {
-    return { users: [], posts: [], messages: [] };
+    const raw = await fs.readFile(DB_FILE, 'utf8');
+    return normalizeDb(JSON.parse(raw));
+  } catch {
+    return cloneDefaultDb();
   }
-};
+}
 
-// Helper: Write DB
-const writeDb = (data) => {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-};
+async function writeDb(data) {
+  const normalized = normalizeDb(data);
+  await fs.writeFile(DB_FILE, JSON.stringify(normalized, null, 2), 'utf8');
+  return normalized;
+}
 
-// --- API ROUTES ---
+function requireString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+function createRouter() {
+  const router = express.Router();
 
-app.get('/api/users', (req, res) => res.json(readDb().users));
+  router.get('/health', (_req, res) => {
+    res.json({ status: 'ok' });
+  });
 
-app.post('/api/users', (req, res) => {
-  const db = readDb();
-  if (db.users.find(u => u.username.toLowerCase() === req.body.username.toLowerCase())) {
-    return res.status(400).json({ error: 'Username taken' });
-  }
-  db.users.push(req.body);
-  writeDb(db);
-  res.json(req.body);
-});
+  router.get('/users', async (_req, res, next) => {
+    try {
+      const db = await readDb();
+      res.json(db.users);
+    } catch (error) {
+      next(error);
+    }
+  });
 
-app.put('/api/users/:id', (req, res) => {
-  const db = readDb();
-  const idx = db.users.findIndex(u => u.id === req.params.id);
-  if (idx > -1) {
-    db.users[idx] = { ...db.users[idx], ...req.body };
-    writeDb(db);
-    res.json(db.users[idx]);
-  } else res.status(404).json({ error: 'Not found' });
-});
+  router.post('/users', async (req, res, next) => {
+    try {
+      const username = req.body?.username;
+      if (!requireString(username)) {
+        return res.status(400).json({ error: 'username is required' });
+      }
 
-app.get('/api/posts', (req, res) => res.json(readDb().posts));
+      const db = await readDb();
+      const taken = db.users.some(
+        (user) => user?.username?.toLowerCase() === username.toLowerCase(),
+      );
+      if (taken) {
+        return res.status(400).json({ error: 'Username taken' });
+      }
 
-app.post('/api/posts', (req, res) => {
-  const db = readDb();
-  db.posts.unshift(req.body);
-  writeDb(db);
-  res.json(req.body);
-});
+      db.users.push(req.body);
+      await writeDb(db);
+      res.status(201).json(req.body);
+    } catch (error) {
+      next(error);
+    }
+  });
 
-app.put('/api/posts/:id', (req, res) => {
-    const db = readDb();
-    const idx = db.posts.findIndex(p => p.id === req.params.id);
-    if(idx > -1) {
-        db.posts[idx] = { ...db.posts[idx], ...req.body };
-        writeDb(db);
-        res.json(db.posts[idx]);
-    } else res.status(404).json({ error: 'Not found' });
-});
+  router.put('/users/:id', async (req, res, next) => {
+    try {
+      const db = await readDb();
+      const userIndex = db.users.findIndex((user) => user.id === req.params.id);
+      if (userIndex < 0) {
+        return res.status(404).json({ error: 'Not found' });
+      }
 
-app.delete('/api/posts/:id', (req, res) => {
-    const db = readDb();
-    db.posts = db.posts.filter(p => p.id !== req.params.id);
-    writeDb(db);
-    res.json({ success: true });
-});
+      db.users[userIndex] = { ...db.users[userIndex], ...req.body };
+      await writeDb(db);
+      res.json(db.users[userIndex]);
+    } catch (error) {
+      next(error);
+    }
+  });
 
-app.get('/api/messages', (req, res) => res.json(readDb().messages));
+  router.get('/posts', async (_req, res, next) => {
+    try {
+      const db = await readDb();
+      res.json(db.posts);
+    } catch (error) {
+      next(error);
+    }
+  });
 
-app.post('/api/messages', (req, res) => {
-  const db = readDb();
-  db.messages.push(req.body);
-  writeDb(db);
-  res.json(req.body);
-});
+  router.post('/posts', async (req, res, next) => {
+    try {
+      const db = await readDb();
+      db.posts.unshift(req.body);
+      await writeDb(db);
+      res.status(201).json(req.body);
+    } catch (error) {
+      next(error);
+    }
+  });
 
-// --- CLIENT ROUTING (SPA) ---
+  router.put('/posts/:id', async (req, res, next) => {
+    try {
+      const db = await readDb();
+      const postIndex = db.posts.findIndex((post) => post.id === req.params.id);
+      if (postIndex < 0) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      db.posts[postIndex] = { ...db.posts[postIndex], ...req.body };
+      await writeDb(db);
+      res.json(db.posts[postIndex]);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete('/posts/:id', async (req, res, next) => {
+    try {
+      const db = await readDb();
+      db.posts = db.posts.filter((post) => post.id !== req.params.id);
+      await writeDb(db);
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/messages', async (_req, res, next) => {
+    try {
+      const db = await readDb();
+      res.json(db.messages);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/messages', async (req, res, next) => {
+    try {
+      const db = await readDb();
+      db.messages.push(req.body);
+      await writeDb(db);
+      res.status(201).json(req.body);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  return router;
+}
+
+app.use('/api', createRouter());
+
 app.get('*', (req, res) => {
-  if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Not found' });
-  const indexPath = path.join(__dirname, 'index.html');
-  if (fs.existsSync(indexPath)) res.sendFile(indexPath);
-  else res.send('Frontend not found.');
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  res.sendFile(path.join(ROOT_DIR, 'index.html'));
 });
 
-app.listen(PORT, () => console.log(`Retrospace running at http://localhost:${PORT}`));
+app.use((error, _req, res, _next) => {
+  console.error('Server error:', error);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+ensureDbFile()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Retrospace running at http://localhost:${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Failed to initialize database:', error);
+    process.exit(1);
+  });
