@@ -9,7 +9,7 @@ A nostalgic social media mashup combining the chaotic energy of 2005 MySpace wit
 - **Profiles**: Customizable themes, music players, and "Top 8" friends.
 - **Social Features**: Likes, Comments, Direct Messages, and Following.
 - **Admin Panel**: Ban users and delete posts (create a user named `admin`).
-- **AI Integration**: Generates emo lyrics, blog posts, and status updates.
+- **Built-in Retro Prompts**: Includes offline generators for statuses, comments, and blog ideas.
 
 ## 📦 Prerequisites
 
